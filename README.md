@@ -2,7 +2,7 @@
 
 Stage 1 firmware work for a premium atmospheric cylinder lamp based on WLED.
 
-This repository does not replace WLED. It fetches official WLED stable and overlays a small WLED usermod that registers one custom product effect: `Lava Lamp`.
+This repository does not replace WLED. It fetches official WLED `v0.15.3` and overlays a small WLED usermod that registers one custom product effect: `Lava Lamp`.
 
 ## Stage 1 Scope
 
@@ -34,12 +34,19 @@ The overlay adds a usermod to WLED and registers the effect with WLED's native `
 
 Files applied inside WLED:
 
+- `usermods/cylinder_lava/cylinder_geometry.h`
+- `usermods/cylinder_lava/cylinder_pipeline.h`
 - `usermods/cylinder_lava/cylinder_lava_engine.h`
+- `usermods/cylinder_lava/lava_scene.h`
 - `usermods/cylinder_lava/usermod_cylinder_lava.h`
 - `platformio_override.ini`
 - `wled00/usermods_list.cpp` registration hook only
 
-The WLED core systems for OTA, UI, network, and presets are not modified.
+WLED core systems for OTA, UI, network, and presets are not rewritten, but a minimal integration patch is applied to WLED's usermod registration list.
+
+## Versioning / Integration Risk
+
+This integration is pinned to WLED `v0.15.3`. The patch targets the `wled00/usermods_list.cpp` layout in that release, so updating WLED may require refreshing the patch before building.
 
 ## Render Model
 
