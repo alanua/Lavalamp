@@ -107,3 +107,12 @@ In WLED, configure one 2D matrix panel:
 - Bottom start / right start / vertical: match physical wiring
 
 The custom effect assumes the WLED logical matrix is correct, then treats the logical X axis as a wrapped cylinder angle.
+
+## Hardware Validation Checklist
+
+- Confirm matrix orientation matches the physical cylinder wrap.
+- Confirm serpentine direction in WLED matches the panel wiring.
+- Check X seam continuity with Lava running slowly.
+- Confirm the configured GPIO matches the LED data pin.
+- Set brightness/current limits conservatively before long tests.
+- Judge final Lava softness and brightness through the diffuser.
