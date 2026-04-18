@@ -6,57 +6,29 @@
 #define CYLINDER_LAVA_MAX_PIXELS 256
 #endif
 
-namespace CylinderLava {
+namespace CylinderLamp {
 
-struct RenderState {
-  uint16_t width = 0;
-  uint16_t height = 0;
-  uint32_t lastMs = 0;
-  uint16_t anglePhase = 0;
-  uint16_t liftPhase = 0;
-  uint16_t rotationPhase = 0;
-  uint8_t initialized = 0;
+struct FieldBuffers {
   uint8_t raw[CYLINDER_LAVA_MAX_PIXELS];
   uint8_t smooth[CYLINDER_LAVA_MAX_PIXELS];
   uint8_t scratch[CYLINDER_LAVA_MAX_PIXELS];
   uint8_t blurred[CYLINDER_LAVA_MAX_PIXELS];
 };
 
-static bool prepare(RenderState& state, Surface& surface) {
-  if (!strip.isMatrix || !SEGMENT.is2D()) return false;
+struct PipelineSettings {
+  uint8_t temporalAlpha = 200;
+  uint8_t blurX = 64;
+  uint8_t blurY = 48;
+  uint8_t floor = 0;
+  uint8_t ceiling = 255;
+  uint8_t contrast = 128;
+};
 
-  const uint16_t width = SEGMENT.virtualWidth();
-  const uint16_t height = SEGMENT.virtualHeight();
-  const uint32_t count = uint32_t(width) * height;
-  if (width < 2 || height < 2 || count == 0 || count > CYLINDER_LAVA_MAX_PIXELS) return false;
-
-  surface.width = uint8_t(width);
-  surface.height = uint8_t(height);
-  surface.count = uint16_t(count);
-
-  if (!state.initialized || state.width != width || state.height != height) {
-    memset(state.raw, 0, sizeof(state.raw));
-    memset(state.smooth, 0, sizeof(state.smooth));
-    memset(state.scratch, 0, sizeof(state.scratch));
-    memset(state.blurred, 0, sizeof(state.blurred));
-    state.width = width;
-    state.height = height;
-    state.lastMs = strip.now;
-    state.anglePhase = 0x1200;
-    state.liftPhase = 0x5800;
-    state.rotationPhase = 0xA400;
-    state.initialized = 1;
-  }
-
-  return true;
-}
-
-static uint16_t elapsedMs(RenderState& state) {
-  const uint32_t now = strip.now;
-  uint32_t dt = now - state.lastMs;
-  state.lastMs = now;
-  if (dt > 96) dt = 96;
-  return uint16_t(dt);
+static inline void clearFields(FieldBuffers& fields) {
+  memset(fields.raw, 0, sizeof(fields.raw));
+  memset(fields.smooth, 0, sizeof(fields.smooth));
+  memset(fields.scratch, 0, sizeof(fields.scratch));
+  memset(fields.blurred, 0, sizeof(fields.blurred));
 }
 
 static inline CRGB blendRgb(const CRGB& a, const CRGB& b, uint8_t amountOfB) {
@@ -73,28 +45,40 @@ static inline CRGB colorOr(uint8_t slot, const CRGB& fallback) {
   return color;
 }
 
-static void temporalSmooth(RenderState& state, const Surface& surface) {
-  const uint8_t alpha = 172 + scale8(SEGMENT.custom2, 60);
-  const uint8_t rawAmount = 255 - alpha;
+static inline void addLayer(uint8_t& target, uint8_t value, uint8_t opacity = 255) {
+  target = qadd8(target, scale8(value, opacity));
+}
 
-  for (uint16_t i = 0; i < surface.count; i++) {
-    const uint16_t mixed = uint16_t(state.smooth[i]) * alpha + uint16_t(state.raw[i]) * rawAmount;
-    state.smooth[i] = uint8_t(mixed >> 8);
+static inline void limitColor(CRGB& color, uint8_t maxRed, uint8_t maxGreen, uint8_t maxBlue, uint16_t maxTotal) {
+  if (color.r > maxRed) color.r = maxRed;
+  if (color.g > maxGreen) color.g = maxGreen;
+  if (color.b > maxBlue) color.b = maxBlue;
+
+  const uint16_t total = uint16_t(color.r) + color.g + color.b;
+  if (total > maxTotal) {
+    color.nscale8_video(uint8_t((uint32_t(maxTotal) * 255U) / total));
   }
 }
 
-static void spatialBlur(RenderState& state, const Surface& surface) {
-  const uint8_t blurX = 42 + scale8(SEGMENT.custom3, 70);
-  const uint8_t blurY = 34 + scale8(SEGMENT.custom3, 54);
+static void temporalSmooth(FieldBuffers& fields, const Surface& surface, uint8_t alpha) {
+  const uint8_t rawAmount = 255 - alpha;
+
+  for (uint16_t i = 0; i < surface.count; i++) {
+    const uint16_t mixed = uint16_t(fields.smooth[i]) * alpha + uint16_t(fields.raw[i]) * rawAmount;
+    fields.smooth[i] = uint8_t(mixed >> 8);
+  }
+}
+
+static void spatialBlur(FieldBuffers& fields, const Surface& surface, uint8_t blurX, uint8_t blurY) {
   const uint8_t keepX = 255 - blurX;
   const uint8_t sideX = blurX >> 1;
 
   for (uint8_t y = 0; y < surface.height; y++) {
     for (uint8_t x = 0; x < surface.width; x++) {
-      const uint8_t center = state.smooth[indexOf(x, y, surface)];
-      const uint8_t left = state.smooth[indexOf(wrapX(x - 1, surface.width), y, surface)];
-      const uint8_t right = state.smooth[indexOf(wrapX(x + 1, surface.width), y, surface)];
-      state.scratch[indexOf(x, y, surface)] = qadd8(scale8(center, keepX), qadd8(scale8(left, sideX), scale8(right, sideX)));
+      const uint8_t center = fields.smooth[indexOf(x, y, surface)];
+      const uint8_t left = sampleWrapped(fields.smooth, x - 1, y, surface);
+      const uint8_t right = sampleWrapped(fields.smooth, x + 1, y, surface);
+      fields.scratch[indexOf(x, y, surface)] = qadd8(scale8(center, keepX), qadd8(scale8(left, sideX), scale8(right, sideX)));
     }
   }
 
@@ -105,12 +89,45 @@ static void spatialBlur(RenderState& state, const Surface& surface) {
     const uint8_t down = y + 1 >= surface.height ? surface.height - 1 : y + 1;
 
     for (uint8_t x = 0; x < surface.width; x++) {
-      const uint8_t center = state.scratch[indexOf(x, y, surface)];
-      const uint8_t above = state.scratch[indexOf(x, up, surface)];
-      const uint8_t below = state.scratch[indexOf(x, down, surface)];
-      state.blurred[indexOf(x, y, surface)] = qadd8(scale8(center, keepY), qadd8(scale8(above, sideY), scale8(below, sideY)));
+      const uint8_t center = fields.scratch[indexOf(x, y, surface)];
+      const uint8_t above = fields.scratch[indexOf(x, up, surface)];
+      const uint8_t below = fields.scratch[indexOf(x, down, surface)];
+      fields.blurred[indexOf(x, y, surface)] = qadd8(scale8(center, keepY), qadd8(scale8(above, sideY), scale8(below, sideY)));
     }
   }
 }
 
-} // namespace CylinderLava
+static inline uint8_t shapeScalar(uint8_t value, const PipelineSettings& settings) {
+  if (value <= settings.floor) return 0;
+
+  uint16_t shaped = value - settings.floor;
+  const uint8_t range = settings.ceiling > settings.floor ? settings.ceiling - settings.floor : 1;
+  shaped = (shaped * 255U) / range;
+  if (shaped > 255U) shaped = 255U;
+
+  if (settings.contrast != 128) {
+    if (shaped >= 128U) {
+      shaped = 128U + scale8(uint8_t(shaped - 128U), settings.contrast);
+    } else {
+      shaped = 128U - scale8(uint8_t(128U - shaped), settings.contrast);
+    }
+  }
+
+  return uint8_t(shaped);
+}
+
+static void shapeField(FieldBuffers& fields, const Surface& surface, const PipelineSettings& settings) {
+  if (settings.floor == 0 && settings.ceiling == 255 && settings.contrast == 128) return;
+
+  for (uint16_t i = 0; i < surface.count; i++) {
+    fields.blurred[i] = shapeScalar(fields.blurred[i], settings);
+  }
+}
+
+static void runPipeline(FieldBuffers& fields, const Surface& surface, const PipelineSettings& settings) {
+  temporalSmooth(fields, surface, settings.temporalAlpha);
+  spatialBlur(fields, surface, settings.blurX, settings.blurY);
+  shapeField(fields, surface, settings);
+}
+
+} // namespace CylinderLamp

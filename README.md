@@ -36,8 +36,10 @@ Files applied inside WLED:
 
 - `usermods/cylinder_lava/cylinder_debug.h`
 - `usermods/cylinder_lava/cylinder_geometry.h`
+- `usermods/cylinder_lava/cylinder_motion.h`
 - `usermods/cylinder_lava/cylinder_pipeline.h`
 - `usermods/cylinder_lava/cylinder_lava_engine.h`
+- `usermods/cylinder_lava/cylinder_scene_contract.h`
 - `usermods/cylinder_lava/lava_scene.h`
 - `usermods/cylinder_lava/usermod_cylinder_lava.h`
 - `platformio_override.ini`

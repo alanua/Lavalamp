@@ -2,7 +2,7 @@
 
 #include "cylinder_geometry.h"
 
-namespace CylinderLava {
+namespace CylinderLamp {
 
 static void renderDebugPattern(const Surface& surface) {
   const uint8_t seamX = surface.width - 1;
@@ -21,4 +21,4 @@ static void renderDebugPattern(const Surface& surface) {
   }
 }
 
-} // namespace CylinderLava
+} // namespace CylinderLamp

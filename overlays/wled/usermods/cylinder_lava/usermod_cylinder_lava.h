@@ -10,25 +10,25 @@ static const char _data_FX_MODE_CYLINDER_LAVA[] PROGMEM =
   "Lava Lamp@Flow,Blob size,Bottom heat,Viscosity,Softness;Deep,Glow,Core;!;2;sx=56,ix=178,c1=136,c2=214,c3=150";
 
 static uint16_t mode_cylinder_lava() {
-  if (!SEGENV.allocateData(sizeof(CylinderLava::RenderState))) {
+  if (!SEGENV.allocateData(sizeof(CylinderLamp::RenderState))) {
     SEGMENT.fill(SEGCOLOR(0));
     return FRAMETIME;
   }
 
-  CylinderLava::RenderState* state = reinterpret_cast<CylinderLava::RenderState*>(SEGENV.data);
-  CylinderLava::Surface surface;
-  if (!CylinderLava::prepare(*state, surface)) {
+  CylinderLamp::RenderState* state = reinterpret_cast<CylinderLamp::RenderState*>(SEGENV.data);
+  CylinderLamp::Surface surface;
+  if (!CylinderLamp::prepare(*state, surface)) {
     SEGMENT.fill(SEGCOLOR(0));
     return 350;
   }
 
 #ifdef CYLINDER_DEBUG_PATTERN
-  CylinderLava::renderDebugPattern(surface);
+  CylinderLamp::renderDebugPattern(surface);
   return FRAMETIME;
 #endif
 
-  const uint16_t dt = CylinderLava::elapsedMs(*state);
-  CylinderLava::render(*state, surface, dt);
+  const uint16_t dt = CylinderLamp::elapsedMs(*state);
+  CylinderLamp::renderLava(*state, surface, dt);
   return FRAMETIME;
 }
 
