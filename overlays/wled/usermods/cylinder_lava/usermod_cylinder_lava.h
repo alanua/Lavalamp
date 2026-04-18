@@ -7,7 +7,7 @@
 static uint16_t mode_cylinder_lava();
 
 static const char _data_FX_MODE_CYLINDER_LAVA[] PROGMEM =
-  "Lava Lamp@Flow,Blob size,Bottom heat,Viscosity,Softness;Deep,Glow,Core;!;2;sx=38,ix=138,c1=150,c2=232,c3=110";
+  "Lava Lamp@Flow,Blob size,Bottom heat,Viscosity,Softness;Deep,Glow,Core;!;2;sx=58,ix=132,c1=150,c2=190,c3=96";
 
 static uint16_t mode_cylinder_lava() {
   if (!SEGENV.allocateData(sizeof(CylinderLamp::RenderState))) {
