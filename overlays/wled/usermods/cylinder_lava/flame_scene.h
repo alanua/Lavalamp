@@ -50,60 +50,90 @@ static inline void limitFlameColor(CRGB& color) {
 
 static MotionRates flameMotionRates(const SceneControls& controls) {
   MotionRates rates;
-  rates.angular = 4 + scale8(controls.flow, 8);
-  rates.rise = 44 + scale8(controls.flow, 76);
-  rates.rotation = 3 + scale8(controls.flow, 8);
-  rates.deform = 2 + scale8(controls.softness, 6);
+  rates.angular = 2 + scale8(controls.flow, 5);
+  rates.rise = 72 + scale8(controls.flow, 104);
+  rates.rotation = 2 + scale8(controls.flow, 5);
+  rates.deform = 2 + scale8(controls.softness, 5);
   return rates;
 }
 
 static PipelineSettings flamePipelineSettings(const SceneContext& context) {
   PipelineSettings settings;
-  settings.temporalAlpha = 118 + scale8(context.controls.viscosity, 76);
-  settings.blurX = 8 + scale8(context.controls.softness, 20);
-  settings.blurY = 8 + scale8(context.controls.softness, 18);
-  settings.floor = 8;
-  settings.ceiling = 230;
-  settings.contrast = 168;
+  settings.temporalAlpha = 48 + scale8(context.controls.viscosity, 86);
+  settings.blurX = 6 + scale8(context.controls.softness, 16);
+  settings.blurY = 5 + scale8(context.controls.softness, 14);
+  settings.floor = 10;
+  settings.ceiling = 236;
+  settings.contrast = 174;
   return settings;
+}
+
+static inline uint8_t flameRowCenter(const SceneContext& context, uint8_t h) {
+  const uint8_t spinPhase = phase8(context.motion.rotationPhase);
+  const uint8_t deformPhase = phase8(context.motion.deformPhase);
+  const int8_t rowLean = int8_t(scale8(sin8_t((h >> 1) + spinPhase), 18)) - 9;
+  const int8_t slowDrift = int8_t(scale8(cos8_t(deformPhase), 10)) - 5;
+  return uint8_t(128 + rowLean + slowDrift);
+}
+
+static inline uint8_t flameRowWidth(const SceneContext& context, uint8_t h) {
+  const uint8_t risePhase = phase8(context.motion.risePhase);
+  const uint8_t baseWidth = 70 + scale8(context.controls.size, 28);
+  const uint8_t breathe = scale8(sin8_t(h - risePhase + 37), 12);
+  uint8_t width = qsub8(qadd8(baseWidth, breathe), scale8(h, 44));
+  if (width < 32) width = 32;
+  return width;
+}
+
+static inline uint8_t flameIgnitionOpacity(uint8_t bottomDepth) {
+  if (bottomDepth == 0) return 235;
+  if (bottomDepth == 1) return 160;
+  if (bottomDepth == 2) return 72;
+  return 0;
 }
 
 static void buildFlameField(SceneContext& context) {
   advanceMotion(context.motion, context.dt, flameMotionRates(context.controls));
 
-  const uint8_t bodyWidth = 42 + scale8(context.controls.size, 18);
-  const uint8_t baseHeatAmount = 66 + scale8(context.controls.heat, 88);
-  const uint8_t bodyAmount = 150 + scale8(context.controls.heat, 62);
-  const uint8_t coreAmount = 88 + scale8(context.controls.heat, 50);
-  const uint8_t risePhase = phase8(context.motion.risePhase);
-  const uint8_t spinPhase = phase8(context.motion.rotationPhase);
-  const uint8_t deformPhase = phase8(context.motion.deformPhase);
+  const uint8_t transportAmount = 128 + scale8(context.controls.flow, 78);
+  const uint8_t baseHeatAmount = 150 + scale8(context.controls.heat, 82);
+  const uint8_t ignitionCenter = flameRowCenter(context, 0);
+  const uint8_t ignitionWidth = 78 + scale8(context.controls.size, 24);
 
   for (uint8_t y = 0; y < context.surface.height; y++) {
     const uint8_t h = heightFromBottom8(y, context.surface.height);
-    const uint8_t risingH = h - risePhase;
-    const uint8_t verticalLife = qsub8(255, scale8(h, 174));
-    const uint8_t baseHeat = scale8(255 - h, baseHeatAmount);
-    const uint8_t lift = scale8(sin8_t(risingH), 36);
-    const uint8_t taper = qadd8(54, scale8(verticalLife, 166));
-
-    const int8_t bend = int8_t(scale8(sin8_t((h >> 1) + spinPhase), 12)) - 6;
-    const uint8_t slowWaver = scale8(cos8_t((h >> 2) + deformPhase), 8);
-    const uint8_t center = uint8_t(int16_t(spinPhase) + bend + slowWaver);
-    const uint8_t coreWidth = bodyWidth > 22 ? bodyWidth - 22 : bodyWidth;
+    const uint8_t center = flameRowCenter(context, h);
+    const uint8_t rowWidth = flameRowWidth(context, h);
+    const uint8_t bottomDepth = context.surface.height - 1 - y;
+    const uint8_t ignitionOpacity = flameIgnitionOpacity(bottomDepth);
 
     for (uint8_t x = 0; x < context.surface.width; x++) {
       const uint8_t angle = angle8(x, context.surface.width);
-      const uint8_t body = flameTongue(angle, center, bodyWidth);
-      const uint8_t core = flameTongue(angle, center, coreWidth);
+      const uint8_t bodyMask = flameTongue(angle, center, rowWidth);
+      const uint8_t below = sampleWrapped(context.field.raw, x, y + 1, context.surface);
+      const uint8_t below2 = sampleWrapped(context.field.raw, x, y + 2, context.surface);
+      const uint8_t leftBelow = sampleWrapped(context.field.raw, x - 1, y + 1, context.surface);
+      const uint8_t rightBelow = sampleWrapped(context.field.raw, x + 1, y + 1, context.surface);
 
-      uint8_t field = qadd8(3, baseHeat);
-      addLayer(field, scale8(body, qadd8(taper, lift)), bodyAmount);
-      addLayer(field, scale8(core, qsub8(taper, 34)), coreAmount);
+      const uint16_t carriedSum = uint16_t(below) * 148U + uint16_t(below2) * 52U + uint16_t(leftBelow) * 24U + uint16_t(rightBelow) * 24U;
+      uint8_t carried = uint8_t(carriedSum >> 8);
+      carried = qsub8(carried, 7 + scale8(h, 34) + scale8(255 - bodyMask, 9));
+      carried = scale8(carried, qadd8(34, scale8(bodyMask, 220)));
 
-      context.field.raw[indexOf(x, y, context.surface)] = field;
+      const uint8_t current = context.field.raw[indexOf(x, y, context.surface)];
+      uint8_t field = lerp8by8(current, carried, transportAmount);
+
+      if (ignitionOpacity) {
+        const uint8_t ignitionMask = flameTongue(angle, ignitionCenter, ignitionWidth);
+        const uint8_t ignition = scale8(qadd8(130, scale8(ignitionMask, 104)), baseHeatAmount);
+        addLayer(field, ignition, ignitionOpacity);
+      }
+
+      context.field.scratch[indexOf(x, y, context.surface)] = field;
     }
   }
+
+  memcpy(context.field.raw, context.field.scratch, context.surface.count);
 }
 
 static void outputFlame(SceneContext& context) {

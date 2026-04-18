@@ -55,6 +55,8 @@ This integration is pinned to WLED `v0.15.3`. The patch targets the `wled00/user
 
 The custom renderers use scalar fields, not particles.
 
+The `Flame` effect uses a lightweight 16x16 heat-column model: lower rows inject stable heat, each frame transports heat upward with small wrapped X diffusion, and the shaped heat maps to ember/orange/gold output.
+
 Pipeline:
 
 1. Raw scalar field
