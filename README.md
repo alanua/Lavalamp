@@ -1,20 +1,19 @@
 # Lavalamp
 
-Stage 1 firmware work for a premium atmospheric cylinder lamp based on WLED.
+Cylinder lamp firmware work for a premium atmospheric lamp based on WLED.
 
-This repository does not replace WLED. It fetches official WLED `v0.15.3` and overlays a small WLED usermod that registers one custom product effect: `Lava Lamp`.
+This repository does not replace WLED. It fetches official WLED `v0.15.3` and overlays a small WLED usermod that registers custom product effects for the cylinder lamp.
 
-## Stage 1 Scope
+## Current Scope
 
 Implemented:
 
 - Cylinder mapping layer
 - Fixed render buffers
-- One WLED-native custom effect: `Lava Lamp`
+- WLED-native custom effects: `Lava Lamp`, `Flame`
 
-Not implemented in Stage 1:
+Not implemented in this branch:
 
-- Flame
 - Presets
 - WLED UI/network/OTA/preset core changes
 - Standalone firmware
@@ -40,6 +39,7 @@ Files applied inside WLED:
 - `usermods/cylinder_lava/cylinder_pipeline.h`
 - `usermods/cylinder_lava/cylinder_lava_engine.h`
 - `usermods/cylinder_lava/cylinder_scene_contract.h`
+- `usermods/cylinder_lava/flame_scene.h`
 - `usermods/cylinder_lava/lava_scene.h`
 - `usermods/cylinder_lava/usermod_cylinder_lava.h`
 - `platformio_override.ini`
@@ -53,14 +53,14 @@ This integration is pinned to WLED `v0.15.3`. The patch targets the `wled00/user
 
 ## Render Model
 
-The lava renderer uses a scalar field, not particles.
+The custom renderers use scalar fields, not particles.
 
 Pipeline:
 
 1. Raw scalar field
 2. Temporal smoothing: `smoothed = old * alpha + raw * (1 - alpha)`
 3. Spatial blur with mandatory X wrap
-4. Warm lava palette mapping
+4. Warm product palette mapping
 5. WLED 2D pixel output
 
 The cylinder coordinate model is:
@@ -119,6 +119,6 @@ The custom effect assumes the WLED logical matrix is correct, then treats the lo
 - Check X seam continuity with no jump on wrap.
 - Confirm the configured GPIO matches the LED data pin.
 - Set brightness/current limits conservatively.
-- Judge Lava softness and brightness through the diffuser.
+- Judge Lava/Flame softness and brightness through the diffuser.
 
 Optional: temporarily build with `-D CYLINDER_DEBUG_PATTERN` to show center stripes and seam markers.

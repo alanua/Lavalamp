@@ -10,8 +10,14 @@ struct RenderState {
   uint16_t height = 0;
   uint32_t lastMs = 0;
   uint8_t initialized = 0;
+  uint8_t sceneId = 0;
   MotionState motion;
   FieldBuffers field;
+};
+
+enum SceneId : uint8_t {
+  SCENE_ID_LAVA = 1,
+  SCENE_ID_FLAME = 2
 };
 
 struct SceneControls {
@@ -79,9 +85,18 @@ static bool prepare(RenderState& state, Surface& surface) {
     state.height = height;
     state.lastMs = strip.now;
     state.initialized = 1;
+    state.sceneId = 0;
   }
 
   return true;
+}
+
+static inline void selectScene(RenderState& state, uint8_t sceneId) {
+  if (state.sceneId == sceneId) return;
+  clearFields(state.field);
+  resetMotion(state.motion);
+  state.lastMs = strip.now;
+  state.sceneId = sceneId;
 }
 
 static uint16_t elapsedMs(RenderState& state) {
