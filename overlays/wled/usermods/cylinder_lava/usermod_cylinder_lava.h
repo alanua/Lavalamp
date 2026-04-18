@@ -11,7 +11,7 @@ static const char _data_FX_MODE_CYLINDER_LAVA[] PROGMEM =
   "Lava Lamp@Flow,Blob size,Bottom heat,Viscosity,Softness;Deep,Glow,Core;!;2;sx=56,ix=178,c1=136,c2=214,c3=150";
 
 static const char _data_FX_MODE_CYLINDER_FLAME[] PROGMEM =
-  "Flame@Rise,Width,Base heat,Stability,Softness;Ember,Flame,Core;!;2;sx=116,ix=154,c1=188,c2=150,c3=82";
+  "Flame@Rise,Width,Base heat,Stability,Softness;Ember,Flame,Core;!;2;sx=106,ix=144,c1=196,c2=172,c3=58";
 
 static uint16_t mode_cylinder_lava() {
   if (!SEGENV.allocateData(sizeof(CylinderLamp::RenderState))) {

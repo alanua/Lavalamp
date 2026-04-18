@@ -50,62 +50,56 @@ static inline void limitFlameColor(CRGB& color) {
 
 static MotionRates flameMotionRates(const SceneControls& controls) {
   MotionRates rates;
-  rates.angular = 10 + scale8(controls.flow, 22);
-  rates.rise = 36 + scale8(controls.flow, 70);
-  rates.rotation = 8 + scale8(controls.flow, 20);
-  rates.deform = 5 + scale8(controls.softness, 12);
+  rates.angular = 4 + scale8(controls.flow, 8);
+  rates.rise = 44 + scale8(controls.flow, 76);
+  rates.rotation = 3 + scale8(controls.flow, 8);
+  rates.deform = 2 + scale8(controls.softness, 6);
   return rates;
 }
 
 static PipelineSettings flamePipelineSettings(const SceneContext& context) {
   PipelineSettings settings;
-  settings.temporalAlpha = 126 + scale8(context.controls.viscosity, 74);
-  settings.blurX = 12 + scale8(context.controls.softness, 34);
-  settings.blurY = 10 + scale8(context.controls.softness, 24);
-  settings.floor = 6;
-  settings.ceiling = 232;
-  settings.contrast = 158;
+  settings.temporalAlpha = 118 + scale8(context.controls.viscosity, 76);
+  settings.blurX = 8 + scale8(context.controls.softness, 20);
+  settings.blurY = 8 + scale8(context.controls.softness, 18);
+  settings.floor = 8;
+  settings.ceiling = 230;
+  settings.contrast = 168;
   return settings;
 }
 
 static void buildFlameField(SceneContext& context) {
   advanceMotion(context.motion, context.dt, flameMotionRates(context.controls));
 
-  const uint8_t bodyWidth = 38 + scale8(context.controls.size, 24);
-  const uint8_t sideWidth = 30 + scale8(context.controls.size, 18);
-  const uint8_t baseHeatAmount = 54 + scale8(context.controls.heat, 78);
-  const uint8_t bodyAmount = 138 + scale8(context.controls.heat, 70);
-  const uint8_t coreAmount = 76 + scale8(context.controls.heat, 46);
+  const uint8_t bodyWidth = 42 + scale8(context.controls.size, 18);
+  const uint8_t baseHeatAmount = 66 + scale8(context.controls.heat, 88);
+  const uint8_t bodyAmount = 150 + scale8(context.controls.heat, 62);
+  const uint8_t coreAmount = 88 + scale8(context.controls.heat, 50);
   const uint8_t risePhase = phase8(context.motion.risePhase);
   const uint8_t spinPhase = phase8(context.motion.rotationPhase);
   const uint8_t deformPhase = phase8(context.motion.deformPhase);
 
   for (uint8_t y = 0; y < context.surface.height; y++) {
     const uint8_t h = heightFromBottom8(y, context.surface.height);
-    const uint8_t fromTop = 255 - h;
     const uint8_t risingH = h - risePhase;
-    const uint8_t verticalLife = qsub8(255, scale8(h, 150));
+    const uint8_t verticalLife = qsub8(255, scale8(h, 174));
     const uint8_t baseHeat = scale8(255 - h, baseHeatAmount);
-    const uint8_t lift = sin8_t(risingH);
-    const uint8_t taper = qadd8(qadd8(58, scale8(verticalLife, 140)), scale8(lift, 24));
+    const uint8_t lift = scale8(sin8_t(risingH), 36);
+    const uint8_t taper = qadd8(54, scale8(verticalLife, 166));
 
-    const int8_t bend = int8_t(scale8(sin8_t(h + spinPhase), 24)) - 12;
-    const uint8_t slowWaver = scale8(cos8_t((h >> 1) + deformPhase), 18);
+    const int8_t bend = int8_t(scale8(sin8_t((h >> 1) + spinPhase), 12)) - 6;
+    const uint8_t slowWaver = scale8(cos8_t((h >> 2) + deformPhase), 8);
     const uint8_t center = uint8_t(int16_t(spinPhase) + bend + slowWaver);
-    const uint8_t sideCenter = center + 98 + scale8(sin8_t(fromTop + deformPhase), 18);
-    const uint8_t coreWidth = bodyWidth > 18 ? bodyWidth - 18 : bodyWidth;
+    const uint8_t coreWidth = bodyWidth > 22 ? bodyWidth - 22 : bodyWidth;
 
     for (uint8_t x = 0; x < context.surface.width; x++) {
       const uint8_t angle = angle8(x, context.surface.width);
-      const uint8_t mainTongue = flameTongue(angle, center, bodyWidth);
-      const uint8_t sideTongue = flameTongue(angle, sideCenter, sideWidth);
-      const uint8_t hotCore = flameTongue(angle, center + scale8(sin8_t(h + risePhase + 73), 12), coreWidth);
+      const uint8_t body = flameTongue(angle, center, bodyWidth);
+      const uint8_t core = flameTongue(angle, center, coreWidth);
 
       uint8_t field = qadd8(3, baseHeat);
-      addLayer(field, scale8(mainTongue, taper), bodyAmount);
-      addLayer(field, scale8(sideTongue, taper), 72);
-      addLayer(field, scale8(hotCore, qsub8(taper, 26)), coreAmount);
-      addLayer(field, lift, 18);
+      addLayer(field, scale8(body, qadd8(taper, lift)), bodyAmount);
+      addLayer(field, scale8(core, qsub8(taper, 34)), coreAmount);
 
       context.field.raw[indexOf(x, y, context.surface)] = field;
     }
@@ -115,7 +109,7 @@ static void buildFlameField(SceneContext& context) {
 static void outputFlame(SceneContext& context) {
   const CRGB ember = flameColorOr(0, CRGB(10, 0, 0), 72, 10, 4);
   const CRGB body = flameColorOr(1, CRGB(230, 62, 0), 318, 112, 10);
-  const CRGB core = flameColorOr(2, CRGB(255, 142, 10), 410, 170, 24);
+  const CRGB core = flameColorOr(2, CRGB(255, 148, 8), 410, 172, 20);
 
   for (uint8_t y = 0; y < context.surface.height; y++) {
     const uint8_t h = heightFromBottom8(y, context.surface.height);
