@@ -18,6 +18,10 @@ static inline int8_t circularOffset8(uint8_t angle, uint8_t center) {
   return int8_t(offset);
 }
 
+static inline uint8_t localAngle8(uint8_t angle, uint8_t center) {
+  return uint8_t(int16_t(circularOffset8(angle, center)) + 128);
+}
+
 static inline uint8_t flameTongue(uint8_t angle, uint8_t center, uint8_t width) {
   const uint8_t distance = circularDistance8(angle, center);
   if (distance >= width) return 0;
@@ -87,9 +91,10 @@ static inline uint8_t flameRowCenter(const SceneContext& context, uint8_t h) {
 
 static inline uint8_t flameRowWidth(const SceneContext& context, uint8_t h) {
   const uint8_t risePhase = phase8(context.motion.risePhase);
+  const uint8_t deformPhase = phase8(context.motion.deformPhase);
   const uint8_t baseWidth = 54 + scale8(context.controls.size, 28);
-  const uint8_t breathe = scale8(sin8_t(h - risePhase + 37), 8);
-  uint8_t width = qsub8(qadd8(baseWidth, breathe), scale8(h, 30));
+  const uint8_t breathe = scale8(sin8_t((h >> 1) - risePhase + deformPhase), 10);
+  uint8_t width = qsub8(qadd8(baseWidth, breathe), scale8(h, 34));
   if (width < 26) width = 26;
   return width;
 }
@@ -104,11 +109,24 @@ static inline uint8_t flameVerticalBell(uint8_t value, uint8_t center, uint8_t r
 static inline uint8_t flameFlowNoise(uint8_t h, uint8_t angle, uint8_t center, const MotionState& motion, const SceneControls& controls) {
   const uint8_t xScale = 18 + scale8(controls.size, 24);
   const uint8_t yScale = 38 + scale8(controls.flow, 34);
-  const uint8_t localAngle = uint8_t(int16_t(circularOffset8(angle, center)) + 128);
-  const uint16_t xCoord = uint16_t(localAngle) * xScale + uint16_t(phase8(motion.rotationPhase)) * 11U;
+  const uint8_t localAngle = localAngle8(angle, center);
+  const uint16_t xCoord = uint16_t(localAngle) * xScale + uint16_t(phase8(motion.rotationPhase)) * 7U;
   const uint16_t yCoord = uint16_t(h) * yScale - (motion.risePhase >> 1);
   const uint8_t noise = inoise8(xCoord, yCoord);
-  return qadd8(62, scale8(ease8InOutApprox(noise), 126));
+  return qadd8(58, scale8(ease8InOutApprox(noise), 122));
+}
+
+static inline uint8_t flameOrganicMotion(uint8_t h, uint8_t localAngle, const MotionState& motion) {
+  const uint8_t softRadius = circularDistance8(localAngle, 128);
+  const uint8_t nested = sin8_t((localAngle >> 1) + phase8(motion.deformPhase));
+  const uint8_t wave = sin8_t(nested + (h >> 1) - phase8(motion.risePhase) + scale8(softRadius, 3));
+  return scale8(ease8InOutApprox(wave), 24);
+}
+
+static inline uint8_t flameRadiantMotion(uint8_t h, uint8_t localAngle, const MotionState& motion) {
+  const uint8_t lift = sin8_t(h + phase8(motion.risePhase));
+  const uint8_t shimmer = sin8_t((h >> 1) + (localAngle >> 2) + phase8(motion.anglePhase));
+  return scale8(avg8(lift, shimmer), 18);
 }
 
 static void buildFlameField(SceneContext& context) {
@@ -132,12 +150,13 @@ static void buildFlameField(SceneContext& context) {
       const uint8_t coreWidth = rowWidth > 20 ? rowWidth - 20 : rowWidth;
       const uint8_t coreMask = flameTongue(angle, center, coreWidth);
       const uint8_t flow = flameFlowNoise(h, angle, center, context.motion, context.controls);
-      const uint8_t localAngle = uint8_t(int16_t(circularOffset8(angle, center)) + 128);
-      const uint8_t angularLife = scale8(sin8_t(localAngle + phase8(context.motion.deformPhase) + scale8(h, 16)), 10);
+      const uint8_t localAngle = localAngle8(angle, center);
+      const uint8_t organicLife = flameOrganicMotion(h, localAngle, context.motion);
+      const uint8_t radiantLife = flameRadiantMotion(h, localAngle, context.motion);
 
       uint8_t field = 0;
-      addLayer(field, scale8(bodyMask, scale8(verticalEnvelope, qadd8(flow, angularLife))), bodyAmount);
-      addLayer(field, scale8(coreMask, scale8(coreEnvelope, qadd8(142, scale8(flow, 72)))), coreAmount);
+      addLayer(field, scale8(bodyMask, scale8(verticalEnvelope, qadd8(flow, organicLife))), bodyAmount);
+      addLayer(field, scale8(coreMask, scale8(coreEnvelope, qadd8(138, qadd8(scale8(flow, 66), radiantLife)))), coreAmount);
       addLayer(field, scale8(bodyMask, ignitionEnvelope), ignitionAmount);
 
       context.field.raw[indexOf(x, y, context.surface)] = field;
