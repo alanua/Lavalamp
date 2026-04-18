@@ -59,7 +59,7 @@ static MotionRates flameMotionRates(const SceneControls& controls) {
 
 static PipelineSettings flamePipelineSettings(const SceneContext& context) {
   PipelineSettings settings;
-  settings.temporalAlpha = 48 + scale8(context.controls.viscosity, 86);
+  settings.temporalAlpha = 20 + scale8(context.controls.viscosity, 56);
   settings.blurX = 6 + scale8(context.controls.softness, 16);
   settings.blurY = 5 + scale8(context.controls.softness, 14);
   settings.floor = 10;
@@ -80,10 +80,10 @@ static inline uint8_t flameRowCenter(const SceneContext& context, uint8_t h) {
 
 static inline uint8_t flameRowWidth(const SceneContext& context, uint8_t h) {
   const uint8_t risePhase = phase8(context.motion.risePhase);
-  const uint8_t baseWidth = 72 + scale8(context.controls.size, 24);
+  const uint8_t baseWidth = 76 + scale8(context.controls.size, 24);
   const uint8_t breathe = scale8(sin8_t(h - risePhase + 37), 10);
-  uint8_t width = qsub8(qadd8(baseWidth, breathe), scale8(h, 54));
-  if (width < 28) width = 28;
+  uint8_t width = qsub8(qadd8(baseWidth, breathe), scale8(h, 42));
+  if (width < 36) width = 36;
   return width;
 }
 
@@ -95,23 +95,25 @@ static inline int8_t flameColumnDrift(const SceneContext& context, uint8_t h) {
 }
 
 static inline uint8_t flameIgnitionOpacity(uint8_t bottomDepth) {
-  if (bottomDepth == 0) return 235;
-  if (bottomDepth == 1) return 160;
-  if (bottomDepth == 2) return 72;
+  if (bottomDepth == 0) return 218;
+  if (bottomDepth == 1) return 190;
+  if (bottomDepth == 2) return 118;
+  if (bottomDepth == 3) return 44;
   return 0;
 }
 
 static void buildFlameField(SceneContext& context) {
   advanceMotion(context.motion, context.dt, flameMotionRates(context.controls));
 
-  const uint8_t transportAmount = 146 + scale8(context.controls.flow, 70);
+  const uint8_t transportAmount = 196 + scale8(context.controls.flow, 46);
   const uint8_t baseHeatAmount = 146 + scale8(context.controls.heat, 86);
   const uint8_t risePhase = phase8(context.motion.risePhase);
   const uint8_t ignitionPulse = qadd8(198, scale8(sin8_t(risePhase), 34));
   const uint8_t ignitionCenter = flameRowCenter(context, 0);
   const uint8_t ignitionWidth = 76 + scale8(context.controls.size, 22);
 
-  for (uint8_t y = 0; y < context.surface.height; y++) {
+  for (int8_t yIndex = int8_t(context.surface.height) - 1; yIndex >= 0; yIndex--) {
+    const uint8_t y = uint8_t(yIndex);
     const uint8_t h = heightFromBottom8(y, context.surface.height);
     const uint8_t center = flameRowCenter(context, h);
     const uint8_t rowWidth = flameRowWidth(context, h);
@@ -124,15 +126,18 @@ static void buildFlameField(SceneContext& context) {
       const uint8_t angle = angle8(x, context.surface.width);
       const uint8_t bodyMask = flameTongue(angle, center, rowWidth);
       const uint8_t below = sampleWrapped(context.field.raw, x + drift, y + 1, context.surface);
+      const uint8_t belowFresh = y + 1 < context.surface.height ? sampleWrapped(context.field.scratch, x + drift, y + 1, context.surface) : below;
       const uint8_t below2 = sampleWrapped(context.field.raw, x + drift, y + 2, context.surface);
       const uint8_t leftBelow = sampleWrapped(context.field.raw, x - 1, y + 1, context.surface);
       const uint8_t rightBelow = sampleWrapped(context.field.raw, x + 1, y + 1, context.surface);
 
-      const uint16_t carriedSum = uint16_t(below) * 160U + uint16_t(below2) * 44U + uint16_t(leftBelow) * 20U + uint16_t(rightBelow) * 20U;
-      uint8_t carried = uint8_t(carriedSum >> 8);
-      carried = qsub8(carried, 5 + scale8(h, 42) + scale8(255 - bodyMask, 12));
+      const uint16_t carriedSum = uint16_t(belowFresh) * 138U + uint16_t(below) * 84U + uint16_t(below2) * 36U + uint16_t(leftBelow) * 18U + uint16_t(rightBelow) * 18U;
+      uint16_t carriedMixed = carriedSum >> 8;
+      if (carriedMixed > 255U) carriedMixed = 255U;
+      uint8_t carried = uint8_t(carriedMixed);
+      carried = qsub8(carried, 3 + scale8(h, 26) + scale8(255 - bodyMask, 7));
       carried = scale8(carried, qadd8(34, scale8(bodyMask, 220)));
-      addLayer(carried, scale8(risingBand, bodyMask), 34);
+      addLayer(carried, scale8(risingBand, bodyMask), 46);
 
       const uint8_t current = context.field.raw[indexOf(x, y, context.surface)];
       uint8_t field = lerp8by8(current, carried, transportAmount);
@@ -157,7 +162,7 @@ static void outputFlame(SceneContext& context) {
 
   for (uint8_t y = 0; y < context.surface.height; y++) {
     const uint8_t h = heightFromBottom8(y, context.surface.height);
-    const uint8_t baseGlow = scale8(255 - h, 18);
+    const uint8_t baseGlow = scale8(255 - h, 12);
 
     for (uint8_t x = 0; x < context.surface.width; x++) {
       const uint8_t scalar = qadd8(context.field.blurred[indexOf(x, y, context.surface)], baseGlow);
