@@ -11,6 +11,13 @@ static inline uint8_t circularDistance8(uint8_t a, uint8_t b) {
   return uint8_t(distance);
 }
 
+static inline int8_t circularOffset8(uint8_t angle, uint8_t center) {
+  int16_t offset = int16_t(angle) - center;
+  if (offset > 127) offset -= 256;
+  if (offset < -128) offset += 256;
+  return int8_t(offset);
+}
+
 static inline uint8_t flameTongue(uint8_t angle, uint8_t center, uint8_t width) {
   const uint8_t distance = circularDistance8(angle, center);
   if (distance >= width) return 0;
@@ -75,7 +82,7 @@ static inline uint8_t flameRowCenter(const SceneContext& context, uint8_t h) {
   const int8_t rowLean = int8_t(scale8(sin8_t((h >> 1) + spinPhase), 12)) - 6;
   const int8_t flowLean = int8_t(scale8(sin8_t((h >> 2) - risePhase + deformPhase), 6)) - 3;
   const int8_t slowDrift = int8_t(scale8(cos8_t(deformPhase), 8)) - 4;
-  return uint8_t(128 + rowLean + flowLean + slowDrift);
+  return uint8_t(int16_t(rowLean) + flowLean + slowDrift);
 }
 
 static inline uint8_t flameRowWidth(const SceneContext& context, uint8_t h) {
@@ -94,10 +101,11 @@ static inline uint8_t flameVerticalBell(uint8_t value, uint8_t center, uint8_t r
   return ease8InOutApprox(255 - uint8_t((uint16_t(distance) * 255U) / radius));
 }
 
-static inline uint8_t flameFlowNoise(uint8_t h, uint8_t angle, const MotionState& motion, const SceneControls& controls) {
+static inline uint8_t flameFlowNoise(uint8_t h, uint8_t angle, uint8_t center, const MotionState& motion, const SceneControls& controls) {
   const uint8_t xScale = 18 + scale8(controls.size, 24);
   const uint8_t yScale = 38 + scale8(controls.flow, 34);
-  const uint16_t xCoord = uint16_t(angle) * xScale + uint16_t(phase8(motion.rotationPhase)) * 11U;
+  const uint8_t localAngle = uint8_t(int16_t(circularOffset8(angle, center)) + 128);
+  const uint16_t xCoord = uint16_t(localAngle) * xScale + uint16_t(phase8(motion.rotationPhase)) * 11U;
   const uint16_t yCoord = uint16_t(h) * yScale - (motion.risePhase >> 1);
   const uint8_t noise = inoise8(xCoord, yCoord);
   return qadd8(62, scale8(ease8InOutApprox(noise), 126));
@@ -123,8 +131,9 @@ static void buildFlameField(SceneContext& context) {
       const uint8_t bodyMask = flameTongue(angle, center, rowWidth);
       const uint8_t coreWidth = rowWidth > 20 ? rowWidth - 20 : rowWidth;
       const uint8_t coreMask = flameTongue(angle, center, coreWidth);
-      const uint8_t flow = flameFlowNoise(h, angle, context.motion, context.controls);
-      const uint8_t angularLife = scale8(sin8_t(angle + phase8(context.motion.deformPhase) + scale8(h, 16)), 10);
+      const uint8_t flow = flameFlowNoise(h, angle, center, context.motion, context.controls);
+      const uint8_t localAngle = uint8_t(int16_t(circularOffset8(angle, center)) + 128);
+      const uint8_t angularLife = scale8(sin8_t(localAngle + phase8(context.motion.deformPhase) + scale8(h, 16)), 10);
 
       uint8_t field = 0;
       addLayer(field, scale8(bodyMask, scale8(verticalEnvelope, qadd8(flow, angularLife))), bodyAmount);
