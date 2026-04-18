@@ -74,7 +74,7 @@ static inline CRGB colorOr(uint8_t slot, const CRGB& fallback) {
 }
 
 static void temporalSmooth(RenderState& state, const Surface& surface) {
-  const uint8_t alpha = 184 + scale8(SEGMENT.custom2, 48);
+  const uint8_t alpha = 172 + scale8(SEGMENT.custom2, 60);
   const uint8_t rawAmount = 255 - alpha;
 
   for (uint16_t i = 0; i < surface.count; i++) {
@@ -84,8 +84,8 @@ static void temporalSmooth(RenderState& state, const Surface& surface) {
 }
 
 static void spatialBlur(RenderState& state, const Surface& surface) {
-  const uint8_t blurX = 54 + (SEGMENT.custom3 >> 3);
-  const uint8_t blurY = 42 + (SEGMENT.custom3 >> 4);
+  const uint8_t blurX = 42 + scale8(SEGMENT.custom3, 70);
+  const uint8_t blurY = 34 + scale8(SEGMENT.custom3, 54);
   const uint8_t keepX = 255 - blurX;
   const uint8_t sideX = blurX >> 1;
 

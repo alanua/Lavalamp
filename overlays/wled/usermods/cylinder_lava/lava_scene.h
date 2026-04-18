@@ -25,8 +25,21 @@ static inline uint8_t lobeFalloff(uint8_t x, uint8_t y, const Surface& surface, 
   return radialFalloffQ8(x, y, surface, lobe.x, lobe.y, lobe.radius, yStretch);
 }
 
+static inline void limitLavaColor(CRGB& color) {
+  const uint8_t maxChannel = 220;
+  if (color.r > maxChannel) color.r = maxChannel;
+  if (color.g > maxChannel) color.g = maxChannel;
+  if (color.b > maxChannel) color.b = maxChannel;
+
+  const uint16_t maxTotal = 420;
+  const uint16_t total = uint16_t(color.r) + color.g + color.b;
+  if (total > maxTotal) {
+    color.nscale8_video(uint8_t((uint32_t(maxTotal) * 255U) / total));
+  }
+}
+
 static void buildLobes(RenderState& state, const Surface& surface, Lobe lobes[4]) {
-  const uint16_t baseRadius = 900 + uint16_t(SEGMENT.intensity) * 2U;
+  const uint16_t baseRadius = 820 + uint16_t(SEGMENT.intensity) * 3U;
 
   for (uint8_t i = 0; i < 4; i++) {
     const uint8_t phaseA = uint8_t(state.anglePhase >> 8) + i * 59U;
@@ -44,7 +57,7 @@ static void rawField(RenderState& state, const Surface& surface) {
   Lobe lobes[4];
   buildLobes(state, surface, lobes);
 
-  const uint8_t heatBias = 44 + (SEGMENT.custom1 >> 2);
+  const uint8_t heatBias = 32 + scale8(SEGMENT.custom1, 92);
   const uint8_t rotation = uint8_t(state.rotationPhase >> 8);
 
   for (uint8_t y = 0; y < surface.height; y++) {
@@ -79,18 +92,20 @@ static void outputLava(RenderState& state, const Surface& surface) {
 
     for (uint8_t x = 0; x < surface.width; x++) {
       const uint8_t scalar = qadd8(state.blurred[indexOf(x, y, surface)], bottomGlow);
-      CRGB color = lavaPalette(ease8InOutApprox(scalar), deep, glow, core);
-      color.nscale8_video(qadd8(28, scale8(scalar, 205)));
+      const uint8_t safeScalar = scalar > 232 ? 232 : scalar;
+      CRGB color = lavaPalette(ease8InOutApprox(safeScalar), deep, glow, core);
+      color.nscale8_video(qadd8(30, scale8(safeScalar, 190)));
+      limitLavaColor(color);
       SEGMENT.setPixelColorXY(x, y, color);
     }
   }
 }
 
 static void render(RenderState& state, const Surface& surface, uint16_t dt) {
-  const uint8_t speed = 1 + (SEGMENT.speed >> 6);
-  state.anglePhase += dt * speed;
-  state.liftPhase += dt * (1 + (SEGMENT.speed >> 7));
-  state.rotationPhase += dt * (1 + (SEGMENT.custom1 >> 7));
+  const uint8_t flow = 16 + scale8(SEGMENT.speed, 48);
+  state.anglePhase += (uint32_t(dt) * flow) >> 4;
+  state.liftPhase += (uint32_t(dt) * (12 + scale8(SEGMENT.speed, 36))) >> 4;
+  state.rotationPhase += (uint32_t(dt) * (10 + scale8(SEGMENT.custom1, 18))) >> 4;
 
   rawField(state, surface);
   temporalSmooth(state, surface);

@@ -34,6 +34,7 @@ The overlay adds a usermod to WLED and registers the effect with WLED's native `
 
 Files applied inside WLED:
 
+- `usermods/cylinder_lava/cylinder_debug.h`
 - `usermods/cylinder_lava/cylinder_geometry.h`
 - `usermods/cylinder_lava/cylinder_pipeline.h`
 - `usermods/cylinder_lava/cylinder_lava_engine.h`
@@ -110,9 +111,12 @@ The custom effect assumes the WLED logical matrix is correct, then treats the lo
 
 ## Hardware Validation Checklist
 
-- Confirm matrix orientation matches the physical cylinder wrap.
-- Confirm serpentine direction in WLED matches the panel wiring.
-- Check X seam continuity with Lava running slowly.
+- Confirm WLED matrix size is `16x16` with `256` LEDs.
+- Confirm matrix orientation and start corner match the physical wrap.
+- Confirm serpentine direction matches the panel wiring.
+- Check X seam continuity with no jump on wrap.
 - Confirm the configured GPIO matches the LED data pin.
-- Set brightness/current limits conservatively before long tests.
-- Judge final Lava softness and brightness through the diffuser.
+- Set brightness/current limits conservatively.
+- Judge Lava softness and brightness through the diffuser.
+
+Optional: temporarily build with `-D CYLINDER_DEBUG_PATTERN` to show center stripes and seam markers.

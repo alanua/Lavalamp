@@ -7,7 +7,7 @@
 static uint16_t mode_cylinder_lava();
 
 static const char _data_FX_MODE_CYLINDER_LAVA[] PROGMEM =
-  "Lava Lamp@Flow,Blob size,Bottom heat,Viscosity,Softness;Deep,Glow,Core;!;2;sx=70,ix=186,c1=138,c2=200,c3=132";
+  "Lava Lamp@Flow,Blob size,Bottom heat,Viscosity,Softness;Deep,Glow,Core;!;2;sx=56,ix=178,c1=136,c2=214,c3=150";
 
 static uint16_t mode_cylinder_lava() {
   if (!SEGENV.allocateData(sizeof(CylinderLava::RenderState))) {
@@ -21,6 +21,11 @@ static uint16_t mode_cylinder_lava() {
     SEGMENT.fill(SEGCOLOR(0));
     return 350;
   }
+
+#ifdef CYLINDER_DEBUG_PATTERN
+  CylinderLava::renderDebugPattern(surface);
+  return FRAMETIME;
+#endif
 
   const uint16_t dt = CylinderLava::elapsedMs(*state);
   CylinderLava::render(*state, surface, dt);
