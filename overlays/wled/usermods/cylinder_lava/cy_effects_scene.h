@@ -43,99 +43,99 @@ static inline uint8_t cyRuntimeDepthSamples(CyEffectKind) {
   return 1;
 }
 
+static inline float cyOpticalTransfer(float e) {
+  if (e < 0.0f) e = 0.0f;
+
+  // kill low-level wash that the diffuser turns into pale fog
+  e = (e - 0.12f) / 0.88f;
+  if (e < 0.0f) e = 0.0f;
+  if (e > 1.0f) e = 1.0f;
+
+  // lift readable shape energy
+  e = powf(e, 0.72f);
+
+  // stronger separation for active shapes
+  if (e > 0.28f) {
+    e = 0.28f + (e - 0.28f) * 1.65f;
+  }
+
+  if (e > 1.0f) e = 1.0f;
+  return e;
+}
+
 static float cyFieldAnemone(const CyCoord& c, float t) {
-  // Dark, calm liquid. Keep background very low so the organism reads clearly.
-  const float liquidTop = 0.010f + 0.020f * c.h;
-  const float liquidRad = 0.010f * expf(-((c.r - 0.78f) * (c.r - 0.78f)) / 0.18f);
-  const float liquid = liquidTop + liquidRad;
+  const float liquid = 0.010f + (0.012f * c.h);
 
-  // Strong anchored base at the floor.
-  const float baseY = expf(-((c.h - 0.075f) * (c.h - 0.075f)) / 0.0028f);
-  const float baseRim = expf(-((c.r - 0.82f) * (c.r - 0.82f)) / 0.010f);
-  const float baseCore = expf(-((c.r - 0.60f) * (c.r - 0.60f)) / 0.050f);
-  const float basePulse = 0.92f + 0.08f * sinf(0.0010f * t);
-  const float base = 1.45f * baseY * (0.72f * baseRim + 0.28f * baseCore) * basePulse;
+  const float baseY = expf(-((c.h - 0.090f) * (c.h - 0.090f)) / 0.0045f);
+  const float baseRim = expf(-((c.r - 0.86f) * (c.r - 0.86f)) / 0.018f);
+  const float baseCore = expf(-((c.r - 0.64f) * (c.r - 0.64f)) / 0.060f);
+  const float basePulse = 0.90f + 0.10f * sinf(0.0011f * t);
+  const float base = 1.70f * baseY * ((0.70f * baseRim) + (0.30f * baseCore)) * basePulse;
 
-  // Bright collar where tentacles start.
-  const float crownY = expf(-((c.h - 0.145f) * (c.h - 0.145f)) / 0.0022f);
-  const float crownR = expf(-((c.r - 0.84f) * (c.r - 0.84f)) / 0.008f);
-  const float crownLobes = 0.88f + 0.12f * cosf(5.0f * c.theta - 0.0011f * t);
-  const float crown = 0.60f * crownY * crownR * crownLobes;
+  const float crownY = expf(-((c.h - 0.170f) * (c.h - 0.170f)) / 0.0030f);
+  const float crownR = expf(-((c.r - 0.88f) * (c.r - 0.88f)) / 0.012f);
+  const float crown = 0.82f * crownY * crownR * (0.80f + 0.20f * cosf((5.0f * c.theta) - (0.0014f * t)));
 
-  // 5 thick visible tentacles, no noise, strong motion, cheap math.
   float tentacles = 0.0f;
   for (uint8_t j = 0; j < 5; j++) {
     const float jf = float(j);
-    const float phase = 1.25663706f * jf; // 2*pi/5 * j
+    const float phase = 1.25663706f * jf;
     const float theta0 = phase;
 
-    // Big readable sway.
     const float sway =
-        0.18f * sinf(0.00115f * t + phase) +
-        (0.10f + 0.22f * c.h) * sinf((3.4f * c.h) - (0.00175f * t) + 0.7f * phase);
+        0.22f * sinf((0.00115f * t) + phase) +
+        (0.16f + (0.24f * c.h)) * sinf((3.2f * c.h) - (0.00185f * t) + (0.8f * phase));
 
     const float center = theta0 + sway;
     float dtheta = c.theta - center;
     while (dtheta > 3.14159265f) dtheta -= 6.28318531f;
     while (dtheta < -3.14159265f) dtheta += 6.28318531f;
 
-    // Thick angular band.
-    const float ang = expf(-(dtheta * dtheta) / 0.090f);
+    const float ang = expf(-(dtheta * dtheta) / 0.150f);
 
-    // Tentacle starts above the crown and rises upward.
-    const float root = 0.135f + 0.010f * sinf(phase);
-    float rise = (c.h - root) / 0.040f;
+    const float root = 0.145f + (0.010f * sinf(phase));
+    float rise = (c.h - root) / 0.035f;
     if (rise < 0.0f) rise = 0.0f;
     if (rise > 1.0f) rise = 1.0f;
     rise = rise * rise * (3.0f - 2.0f * rise);
 
-    const float len = 0.34f + 0.04f * sinf(phase + 0.3f);
+    const float len = 0.42f + (0.05f * sinf(phase + 0.3f));
     const float fall = expf(-(c.h - root) / len);
 
-    // Keep tentacles near the outer shell but with some thickness inward.
-    const float radOuter = expf(-((c.r - 0.86f) * (c.r - 0.86f)) / 0.006f);
-    const float radInner = expf(-((c.r - 0.72f) * (c.r - 0.72f)) / 0.020f);
-    const float rad = 0.78f * radOuter + 0.22f * radInner;
+    const float radOuter = expf(-((c.r - 0.88f) * (c.r - 0.88f)) / 0.012f);
+    const float radInner = expf(-((c.r - 0.72f) * (c.r - 0.72f)) / 0.034f);
+    const float rad = (0.72f * radOuter) + (0.28f * radInner);
 
-    // Visible vertical beating / breathing.
-    const float beat = 0.84f + 0.16f * sinf((7.0f * c.h) - (0.0020f * t) + phase);
+    const float beat = 0.80f + 0.20f * sinf((6.6f * c.h) - (0.0020f * t) + phase);
 
-    tentacles += 1.10f * ang * rise * fall * rad * beat;
+    tentacles += 1.45f * ang * rise * fall * rad * beat;
   }
 
-  // Slight dark cavity above center to prevent full glowing blob wash.
-  const float cavityY = expf(-((c.h - 0.115f) * (c.h - 0.115f)) / 0.0018f);
-  const float cavityR = expf(-((c.r - 0.52f) * (c.r - 0.52f)) / 0.030f);
-  const float cavity = 0.22f * cavityY * cavityR;
+  const float cavityY = expf(-((c.h - 0.125f) * (c.h - 0.125f)) / 0.0022f);
+  const float cavityR = expf(-((c.r - 0.56f) * (c.r - 0.56f)) / 0.032f);
+  const float cavity = 0.26f * cavityY * cavityR;
 
   float f = liquid + base + crown + tentacles - cavity;
 
-  // Harder contrast so diffuser does not wash it out.
   if (f < 0.0f) f = 0.0f;
-  f = f * 1.35f;
-  if (f > 0.20f) {
-    f = 0.20f + (f - 0.20f) * 1.35f;
-  }
+  f *= 1.42f;
   if (f > 1.0f) f = 1.0f;
 
   return f;
 }
 
 static float cyFieldLavaLamp(const CyCoord& c, float t) {
-  // dark clear liquid, very low background
   const float liquid =
-      0.010f +
-      0.016f * c.h +
-      0.010f * expf(-((c.r - 0.82f) * (c.r - 0.82f)) / 0.030f);
+      0.008f +
+      (0.010f * c.h) +
+      (0.006f * expf(-((c.r - 0.82f) * (c.r - 0.82f)) / 0.030f));
 
-  // bright bottom wax reservoir
-  const float resY = expf(-((c.h - 0.075f) * (c.h - 0.075f)) / 0.0048f);
+  const float resY = expf(-((c.h - 0.080f) * (c.h - 0.080f)) / 0.0060f);
   const float resOuter = expf(-((c.r - 0.82f) * (c.r - 0.82f)) / 0.012f);
   const float resInner = expf(-((c.r - 0.58f) * (c.r - 0.58f)) / 0.050f);
   const float reservoirPulse = 0.94f + 0.06f * sinf(0.00075f * t);
-  const float reservoir = 1.38f * resY * (0.74f * resOuter + 0.26f * resInner) * reservoirPulse;
+  const float reservoir = 1.55f * resY * ((0.74f * resOuter) + (0.26f * resInner)) * reservoirPulse;
 
-  // 3 large floating wax masses
   float blobs = 0.0f;
   for (uint8_t k = 0; k < 3; k++) {
     const float kf = float(k);
@@ -147,8 +147,8 @@ static float cyFieldLavaLamp(const CyCoord& c, float t) {
 
     const float thetaCenter =
         thetaBase +
-        0.18f * sinf(0.00013f * t + 1.1f * kf) +
-        0.06f * sinf(0.00031f * t + 0.7f * kf);
+        (0.18f * sinf((0.00013f * t) + (1.1f * kf))) +
+        (0.06f * sinf((0.00031f * t) + (0.7f * kf)));
 
     float dtheta = c.theta - thetaCenter;
     while (dtheta > 3.14159265f) dtheta -= 6.28318531f;
@@ -184,55 +184,75 @@ static float cyFieldLavaLamp(const CyCoord& c, float t) {
         expf(-((c.h - hCenter) * (c.h - hCenter)) / (hW * hW)) *
         expf(-((c.r - rCenter) * (c.r - rCenter)) / (rW * rW));
 
-    blobs += 0.92f * blob;
+    blobs += 1.08f * blob;
   }
 
-  // thermal lift from below encourages reservoir->blob continuity
   const float heat = 0.22f * expf(-c.h / 0.18f) * expf(-((c.r - 0.70f) * (c.r - 0.70f)) / 0.040f);
 
-  // combined wax scalar field
   const float waxRaw = reservoir + blobs + heat;
 
-  // soft iso-threshold -> readable wax silhouettes
-  float wax = (waxRaw - 0.46f) / 0.28f;
+  float wax = (waxRaw - 0.40f) / 0.22f;
   if (wax < 0.0f) wax = 0.0f;
   if (wax > 1.0f) wax = 1.0f;
   wax = wax * wax * (3.0f - 2.0f * wax);
 
-  // bottom glow
   const float bottomGlow =
-      0.16f *
+      0.12f *
       expf(-c.h / 0.14f) *
-      (0.68f * resOuter + 0.32f * resInner);
+      ((0.68f * resOuter) + (0.32f * resInner));
 
-  float f = liquid + 1.32f * wax + bottomGlow;
+  float f = liquid + (1.55f * wax) + bottomGlow;
 
-  // contrast shaping for diffuser readability
   if (f < 0.0f) f = 0.0f;
-  f *= 1.22f;
-  if (f > 0.18f) {
-    f = 0.18f + (f - 0.18f) * 1.28f;
-  }
+  f *= 1.30f;
   if (f > 1.0f) f = 1.0f;
 
   return f;
 }
 
 static float cyFieldFlame(const CyCoord& c, float t) {
-  const float sourceA = cyGauss(c.h, 0.04f, 0.05f);
-  const float sourceR = cyGauss(c.r, 0.72f, 0.18f);
-  const float source = 1.2f * sourceA * sourceR;
+  const float liquid = 0.006f;
+  const float bodyCenter = 0.35f * sinf(0.00055f * t);
+  float dtheta = cyWrappedAngle(c.theta - bodyCenter);
 
-  const float thetaT = c.theta + (1.1f * c.h) + (0.0009f * t);
-  const float nF1 = cyCylinderNoise(thetaT, c.h, c.r, 2.6f, 5.8f, 2.6f, 0.0f, -0.0014f * t, 0.0f);
-  const float nF2 = cyCylinderNoise(thetaT, c.h, c.r, 4.8f, 9.5f, 4.8f, 41.0f, -0.0021f * t, 17.0f);
-  const float nF = 0.68f * nF1 + 0.32f * nF2;
+  const float source =
+      1.65f *
+      expf(-((c.h - 0.055f) * (c.h - 0.055f)) / 0.0025f) *
+      expf(-(dtheta * dtheta) / 0.200f) *
+      expf(-((c.r - 0.78f) * (c.r - 0.78f)) / 0.032f);
 
-  const float envY = expf(-c.h / 0.42f);
-  const float envR = cyGauss(c.r, 0.74f, 0.20f);
-  const float tongues = cyPow(nF, 1.7f) * envY * envR;
-  const float core = 0.75f * expf(-c.h / 0.22f) * cyGauss(c.r, 0.60f, 0.22f);
-  return source + 1.25f * tongues + core;
+  const float coreCenter =
+      bodyCenter +
+      (0.12f * sinf((2.8f * c.h) - (0.00135f * t))) +
+      (0.04f * sinf((7.0f * c.h) - (0.0020f * t)));
+  const float coreTheta = cyWrappedAngle(c.theta - coreCenter);
+  const float taper = expf(-c.h / 0.42f);
+  const float core =
+      1.28f *
+      expf(-(coreTheta * coreTheta) / 0.105f) *
+      expf(-((c.r - 0.74f) * (c.r - 0.74f)) / 0.030f) *
+      taper;
+
+  float tongues = 0.0f;
+  for (uint8_t i = 0; i < 3; i++) {
+    const float fi = float(i);
+    const float phase = 2.0943951f * fi;
+    const float tongueCenter =
+        bodyCenter +
+        (0.22f * sinf((3.6f * c.h) - (0.00155f * t) + phase));
+    const float td = cyWrappedAngle(c.theta - tongueCenter);
+    const float vertical =
+        expf(-((c.h - (0.22f + (0.15f * fi))) * (c.h - (0.22f + (0.15f * fi)))) / 0.040f);
+    const float radial = expf(-((c.r - 0.82f) * (c.r - 0.82f)) / 0.026f);
+    tongues += 0.52f * expf(-(td * td) / 0.070f) * vertical * radial;
+  }
+
+  const float upperFade = expf(-c.h / 0.55f);
+  float f = liquid + source + (core * upperFade) + tongues;
+  if (f < 0.0f) f = 0.0f;
+  f *= 1.30f;
+  if (f > 1.0f) f = 1.0f;
+  return f;
 }
 
 static float cyFieldPlasmaCore(const CyCoord& c, float t) {
@@ -381,22 +401,22 @@ static CRGB cyColor(CyEffectKind kind, float energy, float theta, float t) {
     case CY_EFFECT_ANEMONE:
       return cyBlend3(
         h,
-        cyColorOr(0, CRGB(1, 3, 12)),
-        cyColorOr(1, CRGB(90, 20, 160)),
-        cyColorOr(2, CRGB(110, 250, 255))
+        CRGB(0, 0, 0),
+        CRGB(95, 16, 180),
+        CRGB(100, 245, 255)
       );
     case CY_EFFECT_LAVA_LAMP:
       return cyBlend3(
         h,
-        cyColorOr(0, CRGB(255, 150, 70)),
-        cyColorOr(1, CRGB(120, 40, 170)),
-        cyColorOr(2, CRGB(8, 14, 34))
+        CRGB(0, 0, 0),
+        CRGB(210, 46, 0),
+        CRGB(255, 162, 18)
       );
     case CY_EFFECT_FLAME:
-      if (energy < 0.28f) return blendRgb(CRGB::Black, CRGB(90, 0, 0), uint8_t(energy * 910.0f));
-      if (energy < 0.62f) return blendRgb(CRGB(90, 0, 0), CRGB(230, 64, 0), uint8_t((energy - 0.28f) * 750.0f));
-      if (energy < 0.88f) return blendRgb(CRGB(230, 64, 0), CRGB(255, 178, 24), uint8_t((energy - 0.62f) * 980.0f));
-      return blendRgb(CRGB(255, 178, 24), CRGB(255, 232, 150), uint8_t((energy - 0.88f) * 2125.0f));
+      if (energy < 0.24f) return blendRgb(CRGB::Black, CRGB(105, 0, 0), uint8_t(energy * 1060.0f));
+      if (energy < 0.58f) return blendRgb(CRGB(105, 0, 0), CRGB(240, 58, 0), uint8_t((energy - 0.24f) * 750.0f));
+      if (energy < 0.86f) return blendRgb(CRGB(240, 58, 0), CRGB(255, 170, 20), uint8_t((energy - 0.58f) * 910.0f));
+      return blendRgb(CRGB(255, 170, 20), CRGB(255, 226, 92), uint8_t((energy - 0.86f) * 1820.0f));
     case CY_EFFECT_PLASMA_CORE:
       return cyBlend3(h, cyColorOr(0, CRGB(7, 0, 56)), cyColorOr(1, CRGB(0, 174, 255)), cyColorOr(2, CRGB(230, 248, 255)));
     case CY_EFFECT_DEEP_NOISE:
@@ -433,10 +453,11 @@ static void outputCyField(SceneContext& context, CyEffectKind kind) {
   for (uint8_t y = 0; y < context.surface.height; y++) {
     for (uint8_t x = 0; x < context.surface.width; x++) {
       const uint8_t scalar = context.field.blurred[indexOf(x, y, context.surface)];
-      const float energy = float(scalar) / 255.0f;
+      const float energy = cyOpticalTransfer(float(scalar) / 255.0f);
+      const uint8_t opticalScalar = cyEnergy8(energy);
       const float theta = CY_TWO_PI * (float(x) / float(context.surface.width));
-      CRGB color = cyColor(kind, energy, theta, t);
-      color.nscale8_video(qadd8(4, scale8(scalar, 236)));
+      CRGB color = opticalScalar == 0 ? CRGB::Black : cyColor(kind, energy, theta, t);
+      color.nscale8_video(qadd8(4, scale8(opticalScalar, 236)));
       cyLimit(color);
       SEGMENT.setPixelColorXY(x, y, color);
     }
