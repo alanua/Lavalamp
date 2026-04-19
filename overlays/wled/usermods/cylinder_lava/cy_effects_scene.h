@@ -35,30 +35,56 @@ static PipelineSettings cyExactPipelineSettings(const SceneContext&) {
 }
 
 static float cyFieldAnemone(const CyCoord& c, float t) {
-  const float liquid = 0.10f + 0.10f * cyCylinderNoise(c.theta, c.h, c.r, 1.7f, 2.4f, 1.7f, 0.0f, -0.00018f * t, 0.0f);
+  // calm clear liquid in the tube
+  const float liquidSlow = cyCylinderNoise(c.theta, c.h, c.r, 1.2f, 1.8f, 1.2f, 0.0f, -0.00008f * t, 0.0f);
+  const float liquidDeep = cyCylinderNoise(c.theta, c.h, c.r, 2.0f, 3.0f, 2.0f, 11.0f, -0.00012f * t, 19.0f);
+  const float liquid = 0.025f + (0.030f * liquidSlow) + (0.012f * liquidDeep);
 
-  const float bodyY = cyGauss(c.h, 0.10f, 0.11f);
-  const float bodyR = cyGauss(c.r, 0.78f, 0.18f);
-  const float bodyA = 0.88f + 0.12f * cosf((4.0f * c.theta) + (0.0007f * t));
-  const float body = 1.15f * bodyY * bodyR * bodyA;
+  // bottom body / foot: one readable anchored organism base
+  const float baseH = cyGauss(c.h, 0.085f, 0.070f);
+  const float baseOuter = cyGauss(c.r, 0.80f, 0.15f);
+  const float baseInner = cyGauss(c.r, 0.58f, 0.22f);
+  const float baseLobes = 0.92f + 0.08f * cosf((4.0f * c.theta) - (0.00022f * t));
+  const float base = 1.10f * baseH * ((0.68f * baseOuter) + (0.32f * baseInner)) * baseLobes;
 
+  // crown / collar at the top of the body, from which tentacles grow upward
+  const float crownH = cyGauss(c.h, 0.150f, 0.050f);
+  const float crownR = cyGauss(c.r, 0.82f, 0.10f);
+  const float crown = 0.32f * crownH * crownR * (0.78f + 0.22f * cosf((6.0f * c.theta) - (0.00055f * t)));
+
+  // thick soft tentacles / fringe growing upward
   float tentacles = 0.0f;
-  for (uint8_t j = 0; j < 10; j++) {
+  for (uint8_t j = 0; j < 9; j++) {
     const float jf = float(j);
-    const float phase = 0.6f * jf;
-    const float thetaJ = CY_TWO_PI * (jf / 10.0f);
-    const float sway = 0.18f * sinf((2.2f * c.h) - (0.0011f * t) + phase);
-    const float dtheta = cyWrappedAngle(c.theta - (thetaJ + sway));
-    const float ang = cyGauss(dtheta, 0.0f, 0.20f);
-    const float root = 0.11f + 0.02f * sinf(phase);
-    const float up = cySmoothstep(root, root + 0.10f, c.h) * expf(-((c.h - root) / 0.34f));
-    const float rad = cyGauss(c.r, 0.76f, 0.16f);
-    const float nt = cyCylinderNoise(c.theta, c.h, c.r, 2.0f, 4.8f, 2.0f, 31.0f * jf, -0.00035f * t, 17.0f * jf);
-    const float turb = 0.75f + 0.45f * nt;
-    tentacles += 0.55f * ang * up * rad * turb;
+    const float phase = 0.70f * jf;
+    const float theta0 = CY_TWO_PI * (jf / 9.0f);
+
+    const float root = 0.125f + (0.010f * sinf(phase));
+    const float sway = (0.055f + (0.020f * c.h)) * sinf((2.8f * c.h) - (0.00080f * t) + phase);
+    const float curl = 0.045f * sinf((7.0f * c.h) - (0.00105f * t) + (1.3f * phase));
+    const float center = theta0 + sway + curl;
+
+    const float dtheta = cyWrappedAngle(c.theta - center);
+    const float ang = cyGauss(dtheta, 0.0f, 0.16f);
+
+    const float lift = cySmoothstep(root, root + 0.05f, c.h);
+    const float len = 0.25f + (0.05f * sinf(phase));
+    const float fall = expf(-(c.h - root) / len);
+
+    const float radOuter = cyGauss(c.r, 0.84f, 0.08f);
+    const float radInner = cyGauss(c.r, 0.70f, 0.14f);
+    const float rad = (0.74f * radOuter) + (0.26f * radInner);
+
+    const float noise = cyCylinderNoise(c.theta, c.h, c.r, 1.7f, 4.4f, 1.7f, 23.0f * jf, -0.00025f * t, 9.0f * jf);
+    const float edge = 0.88f + (0.18f * noise);
+
+    tentacles += 0.52f * ang * lift * fall * rad * edge;
   }
 
-  return liquid + body + tentacles;
+  // slight inner cavity so the base is not a flat glowing lump
+  const float cavity = 0.16f * cyGauss(c.h, 0.110f, 0.030f) * cyGauss(c.r, 0.48f, 0.15f);
+
+  return liquid + base + crown + tentacles - cavity;
 }
 
 static float cyFieldLavaLamp(const CyCoord& c, float t) {
@@ -252,7 +278,12 @@ static CRGB cyColor(CyEffectKind kind, float energy, float theta, float t) {
 
   switch (kind) {
     case CY_EFFECT_ANEMONE:
-      return cyBlend3(h, cyColorOr(0, CRGB(3, 0, 22)), cyColorOr(1, CRGB(164, 20, 190)), cyColorOr(2, CRGB(94, 245, 222)));
+      return cyBlend3(
+        h,
+        cyColorOr(0, CRGB(2, 10, 28)),
+        cyColorOr(1, CRGB(86, 56, 196)),
+        cyColorOr(2, CRGB(150, 238, 255))
+      );
     case CY_EFFECT_LAVA_LAMP:
       return cyBlend3(h, cyColorOr(0, CRGB(12, 0, 0)), cyColorOr(1, CRGB(218, 52, 0)), cyColorOr(2, CRGB(255, 136, 8)));
     case CY_EFFECT_FLAME:
