@@ -34,30 +34,30 @@ static PipelineSettings cyExactPipelineSettings(const SceneContext&) {
   return settings;
 }
 
-static float cyFieldAnemone(const CyCoord& c, float t) {
-  // calm clear liquid in the tube
-  const float liquidSlow = cyCylinderNoise(c.theta, c.h, c.r, 1.2f, 1.8f, 1.2f, 0.0f, -0.00008f * t, 0.0f);
-  const float liquidDeep = cyCylinderNoise(c.theta, c.h, c.r, 2.0f, 3.0f, 2.0f, 11.0f, -0.00012f * t, 19.0f);
-  const float liquid = 0.025f + (0.030f * liquidSlow) + (0.012f * liquidDeep);
+static inline float cySoftBand(float value, float center, float halfWidth) {
+  const float x = cyClamp(1.0f - (fabsf(value - center) / halfWidth), 0.0f, 1.0f);
+  return x * x * (3.0f - (2.0f * x));
+}
 
-  // bottom body / foot: one readable anchored organism base
-  const float baseH = cyGauss(c.h, 0.085f, 0.070f);
-  const float baseOuter = cyGauss(c.r, 0.80f, 0.15f);
-  const float baseInner = cyGauss(c.r, 0.58f, 0.22f);
+static float cyFieldAnemone(const CyCoord& c, float t) {
+  const float liquidWave = 0.5f + 0.5f * sinf((1.4f * c.theta) + (2.0f * c.h) - (0.00010f * t));
+  const float liquid = 0.018f + (0.012f * liquidWave);
+
+  const float baseH = cySoftBand(c.h, 0.085f, 0.115f);
+  const float baseOuter = cySoftBand(c.r, 0.88f, 0.24f);
+  const float baseInner = cySoftBand(c.r, 0.74f, 0.34f);
   const float baseLobes = 0.92f + 0.08f * cosf((4.0f * c.theta) - (0.00022f * t));
   const float base = 1.10f * baseH * ((0.68f * baseOuter) + (0.32f * baseInner)) * baseLobes;
 
-  // crown / collar at the top of the body, from which tentacles grow upward
-  const float crownH = cyGauss(c.h, 0.150f, 0.050f);
-  const float crownR = cyGauss(c.r, 0.82f, 0.10f);
+  const float crownH = cySoftBand(c.h, 0.150f, 0.075f);
+  const float crownR = cySoftBand(c.r, 0.90f, 0.18f);
   const float crown = 0.32f * crownH * crownR * (0.78f + 0.22f * cosf((6.0f * c.theta) - (0.00055f * t)));
 
-  // thick soft tentacles / fringe growing upward
   float tentacles = 0.0f;
-  for (uint8_t j = 0; j < 9; j++) {
+  for (uint8_t j = 0; j < 5; j++) {
     const float jf = float(j);
-    const float phase = 0.70f * jf;
-    const float theta0 = CY_TWO_PI * (jf / 9.0f);
+    const float phase = 0.90f * jf;
+    const float theta0 = CY_TWO_PI * (jf / 5.0f);
 
     const float root = 0.125f + (0.010f * sinf(phase));
     const float sway = (0.055f + (0.020f * c.h)) * sinf((2.8f * c.h) - (0.00080f * t) + phase);
@@ -65,26 +65,25 @@ static float cyFieldAnemone(const CyCoord& c, float t) {
     const float center = theta0 + sway + curl;
 
     const float dtheta = cyWrappedAngle(c.theta - center);
-    const float ang = cyGauss(dtheta, 0.0f, 0.16f);
+    const float ang = cySoftBand(dtheta, 0.0f, 0.25f);
 
     const float lift = cySmoothstep(root, root + 0.05f, c.h);
-    const float len = 0.25f + (0.05f * sinf(phase));
-    const float fall = expf(-(c.h - root) / len);
+    const float len = 0.44f + (0.05f * sinf(phase));
+    const float fallBase = cyClamp(1.0f - ((c.h - root) / len), 0.0f, 1.0f);
+    const float fall = fallBase * fallBase;
 
-    const float radOuter = cyGauss(c.r, 0.84f, 0.08f);
-    const float radInner = cyGauss(c.r, 0.70f, 0.14f);
+    const float radOuter = cySoftBand(c.r, 0.92f, 0.16f);
+    const float radInner = cySoftBand(c.r, 0.78f, 0.24f);
     const float rad = (0.74f * radOuter) + (0.26f * radInner);
 
-    const float noise = cyCylinderNoise(c.theta, c.h, c.r, 1.7f, 4.4f, 1.7f, 23.0f * jf, -0.00025f * t, 9.0f * jf);
-    const float edge = 0.88f + (0.18f * noise);
+    const float edge = 0.92f + (0.08f * sinf((5.0f * c.h) - (0.00042f * t) + (1.7f * phase)));
 
-    tentacles += 0.52f * ang * lift * fall * rad * edge;
+    tentacles += 0.58f * ang * lift * fall * rad * edge;
   }
 
-  // slight inner cavity so the base is not a flat glowing lump
-  const float cavity = 0.16f * cyGauss(c.h, 0.110f, 0.030f) * cyGauss(c.r, 0.48f, 0.15f);
+  const float cavity = 0.08f * cySoftBand(c.h, 0.110f, 0.050f) * cySoftBand(c.r, 0.68f, 0.24f);
 
-  return liquid + base + crown + tentacles - cavity;
+  return cyClamp(liquid + base + crown + tentacles - cavity, 0.0f, 1.35f);
 }
 
 static float cyFieldLavaLamp(const CyCoord& c, float t) {
@@ -255,13 +254,15 @@ static float cyField(CyEffectKind kind, const CyCoord& c, float t) {
 static void buildCyField(SceneContext& context, CyEffectKind kind) {
   advanceMotion(context.motion, context.dt, MotionRates());
   const float t = float(strip.now);
-  const float totalWeight = cyDepthWeight(0) + cyDepthWeight(1) + cyDepthWeight(2) + cyDepthWeight(3);
+  const uint8_t depthSamples = kind == CY_EFFECT_ANEMONE ? 1 : CY_DEPTH_SAMPLES;
+  float totalWeight = 0.0f;
+  for (uint8_t sample = 0; sample < depthSamples; sample++) totalWeight += cyDepthWeight(sample);
 
   for (uint8_t y = 0; y < context.surface.height; y++) {
     for (uint8_t x = 0; x < context.surface.width; x++) {
       float accumulated = 0.0f;
 
-      for (uint8_t sample = 0; sample < CY_DEPTH_SAMPLES; sample++) {
+      for (uint8_t sample = 0; sample < depthSamples; sample++) {
         const CyCoord c = cyCoord(x, y, sample, context.surface);
         accumulated += cyDepthWeight(sample) * cyField(kind, c, t);
       }
