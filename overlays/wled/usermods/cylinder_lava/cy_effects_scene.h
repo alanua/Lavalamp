@@ -63,65 +63,39 @@ static inline float cyOpticalTransfer(float e) {
   return e;
 }
 
-static float cyFieldAnemone(const CyCoord& c, float t) {
-  const float liquid = 0.010f + (0.012f * c.h);
+struct CyOctopusSample {
+  uint8_t angle;
+  uint8_t radius;
+};
 
-  const float baseY = expf(-((c.h - 0.090f) * (c.h - 0.090f)) / 0.0045f);
-  const float baseRim = expf(-((c.r - 0.86f) * (c.r - 0.86f)) / 0.018f);
-  const float baseCore = expf(-((c.r - 0.64f) * (c.r - 0.64f)) / 0.060f);
-  const float basePulse = 0.90f + 0.10f * sinf(0.0011f * t);
-  const float base = 1.70f * baseY * ((0.70f * baseRim) + (0.30f * baseCore)) * basePulse;
+static inline CyOctopusSample cyAnemoneOctopusSample(uint8_t x, uint8_t y, const Surface& surface) {
+  const float u = (float(x) + 0.5f) / float(surface.width);
+  const float h = surface.height <= 1 ? 0.0f : float(y) / float(surface.height - 1);
+  const float theta = CY_TWO_PI * u;
+  const float dx = cyWrappedAngle(theta - CY_PI) / CY_PI;
+  const float dy = 1.0f - (2.0f * h);
+  const uint8_t maxDim = surface.width > surface.height ? surface.width : surface.height;
+  const float radiusScale = 0.5f * float(maxDim) * float(180U / maxDim);
 
-  const float crownY = expf(-((c.h - 0.170f) * (c.h - 0.170f)) / 0.0030f);
-  const float crownR = expf(-((c.r - 0.88f) * (c.r - 0.88f)) / 0.012f);
-  const float crown = 0.82f * crownY * crownR * (0.80f + 0.20f * cosf((5.0f * c.theta) - (0.0014f * t)));
+  CyOctopusSample sample;
+  sample.angle = uint8_t(int(40.7436f * atan2_t(dy, dx)));
+  sample.radius = uint8_t(cyClamp(sqrtf((dx * dx) + (dy * dy)) * radiusScale, 0.0f, 255.0f));
+  return sample;
+}
 
-  float tentacles = 0.0f;
-  for (uint8_t j = 0; j < 5; j++) {
-    const float jf = float(j);
-    const float phase = 1.25663706f * jf;
-    const float theta0 = phase;
+static inline uint16_t cyAnemoneOctopusStep(float t) {
+  const uint16_t speed = uint16_t(SEGMENT.speed / 32U) + 1U;
+  return uint16_t(t * 0.04f * float(speed));
+}
 
-    const float sway =
-        0.22f * sinf((0.00115f * t) + phase) +
-        (0.16f + (0.24f * c.h)) * sinf((3.2f * c.h) - (0.00185f * t) + (0.8f * phase));
-
-    const float center = theta0 + sway;
-    float dtheta = c.theta - center;
-    while (dtheta > 3.14159265f) dtheta -= 6.28318531f;
-    while (dtheta < -3.14159265f) dtheta += 6.28318531f;
-
-    const float ang = expf(-(dtheta * dtheta) / 0.150f);
-
-    const float root = 0.145f + (0.010f * sinf(phase));
-    float rise = (c.h - root) / 0.035f;
-    if (rise < 0.0f) rise = 0.0f;
-    if (rise > 1.0f) rise = 1.0f;
-    rise = rise * rise * (3.0f - 2.0f * rise);
-
-    const float len = 0.42f + (0.05f * sinf(phase + 0.3f));
-    const float fall = expf(-(c.h - root) / len);
-
-    const float radOuter = expf(-((c.r - 0.88f) * (c.r - 0.88f)) / 0.012f);
-    const float radInner = expf(-((c.r - 0.72f) * (c.r - 0.72f)) / 0.034f);
-    const float rad = (0.72f * radOuter) + (0.28f * radInner);
-
-    const float beat = 0.80f + 0.20f * sinf((6.6f * c.h) - (0.0020f * t) + phase);
-
-    tentacles += 1.45f * ang * rise * fall * rad * beat;
-  }
-
-  const float cavityY = expf(-((c.h - 0.125f) * (c.h - 0.125f)) / 0.0022f);
-  const float cavityR = expf(-((c.r - 0.56f) * (c.r - 0.56f)) / 0.032f);
-  const float cavity = 0.26f * cavityY * cavityR;
-
-  float f = liquid + base + crown + tentacles - cavity;
-
-  if (f < 0.0f) f = 0.0f;
-  f *= 1.42f;
-  if (f > 1.0f) f = 1.0f;
-
-  return f;
+static inline uint8_t cyAnemoneOctopusIntensity(const CyOctopusSample& sample, uint16_t step) {
+  const uint8_t halfStep = uint8_t(step >> 1);
+  const uint8_t step8 = uint8_t(step);
+  const uint8_t legs = uint8_t(SEGMENT.custom3 / 4U) + 1U;
+  const uint8_t inner = sin8_t(uint8_t(((int(sample.angle) * 4 - int(sample.radius)) / 4) + int(halfStep)));
+  uint16_t intensity = sin8_t(uint8_t(int(inner) + int(sample.radius) - int(step8) + (int(sample.angle) * int(legs))));
+  intensity = uint16_t(map((intensity * intensity) & 0xFFFF, 0, 65535, 0, 255));
+  return uint8_t(intensity);
 }
 
 static float cyFieldLavaLamp(const CyCoord& c, float t) {
@@ -351,7 +325,7 @@ static float cyFieldCrossBandsTube(const CyCoord& c, float t) {
 
 static float cyField(CyEffectKind kind, const CyCoord& c, float t) {
   switch (kind) {
-    case CY_EFFECT_ANEMONE: return cyFieldAnemone(c, t);
+    case CY_EFFECT_ANEMONE: return 0.0f;
     case CY_EFFECT_LAVA_LAMP: return cyFieldLavaLamp(c, t);
     case CY_EFFECT_FLAME: return cyFieldFlame(c, t);
     case CY_EFFECT_PLASMA_CORE: return cyFieldPlasmaCore(c, t);
@@ -464,13 +438,25 @@ static void outputCyField(SceneContext& context, CyEffectKind kind) {
   }
 }
 
+static void renderCyAnemone(RenderState&, const Surface& surface, uint16_t) {
+  const uint16_t step = cyAnemoneOctopusStep(float(strip.now));
+
+  for (uint8_t x = 0; x < surface.width; x++) {
+    for (uint8_t y = 0; y < surface.height; y++) {
+      const CyOctopusSample sample = cyAnemoneOctopusSample(x, y, surface);
+      const uint8_t intensity = cyAnemoneOctopusIntensity(sample, step);
+      const CRGB color = ColorFromPalette(SEGPALETTE, uint8_t(uint8_t(step >> 1) - sample.radius), intensity);
+      SEGMENT.setPixelColorXY(x, y, color);
+    }
+  }
+}
+
 #define CY_DEFINE_SCENE(NAME, KIND) \
   static void build##NAME(SceneContext& context) { buildCyField(context, KIND); } \
   static void output##NAME(SceneContext& context) { outputCyField(context, KIND); } \
   static const SceneDefinition NAME##_SCENE = { build##NAME, cyExactPipelineSettings, output##NAME }; \
   static void render##NAME(RenderState& state, const Surface& surface, uint16_t dt) { renderScene(state, surface, dt, NAME##_SCENE); }
 
-CY_DEFINE_SCENE(CyAnemone, CY_EFFECT_ANEMONE)
 CY_DEFINE_SCENE(CyLavaLamp, CY_EFFECT_LAVA_LAMP)
 CY_DEFINE_SCENE(CyFlame, CY_EFFECT_FLAME)
 CY_DEFINE_SCENE(CyPlasmaCore, CY_EFFECT_PLASMA_CORE)
