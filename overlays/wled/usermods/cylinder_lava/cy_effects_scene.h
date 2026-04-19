@@ -122,35 +122,100 @@ static float cyFieldAnemone(const CyCoord& c, float t) {
 }
 
 static float cyFieldLavaLamp(const CyCoord& c, float t) {
-  const float liquid = 0.08f + 0.06f * cyCylinderNoise(c.theta, c.h, c.r, 1.5f, 2.2f, 1.5f, 0.0f, -0.00012f * t, 0.0f);
+  // dark clear liquid, very low background
+  const float liquid =
+      0.010f +
+      0.016f * c.h +
+      0.010f * expf(-((c.r - 0.82f) * (c.r - 0.82f)) / 0.030f);
 
-  const float thetaC[3] = {0.0f, 2.1f, 4.2f};
-  const float hc[3] = {
-    0.22f + 0.10f * sinf((0.00033f * t) + 0.0f),
-    0.47f + 0.12f * sinf((0.00027f * t) + 1.5f),
-    0.71f + 0.10f * sinf((0.00029f * t) + 3.1f)
-  };
-  const float tc[3] = {
-    thetaC[0] + 0.22f * sinf((0.00019f * t) + 0.0f),
-    thetaC[1] + 0.18f * sinf((0.00021f * t) + 1.2f),
-    thetaC[2] + 0.20f * sinf((0.00017f * t) + 2.4f)
-  };
-  const float rc[3] = {0.63f, 0.58f, 0.66f};
+  // bright bottom wax reservoir
+  const float resY = expf(-((c.h - 0.075f) * (c.h - 0.075f)) / 0.0048f);
+  const float resOuter = expf(-((c.r - 0.82f) * (c.r - 0.82f)) / 0.012f);
+  const float resInner = expf(-((c.r - 0.58f) * (c.r - 0.58f)) / 0.050f);
+  const float reservoirPulse = 0.94f + 0.06f * sinf(0.00075f * t);
+  const float reservoir = 1.38f * resY * (0.74f * resOuter + 0.26f * resInner) * reservoirPulse;
 
+  // 3 large floating wax masses
   float blobs = 0.0f;
   for (uint8_t k = 0; k < 3; k++) {
-    const float da = cyWrappedAngle(c.theta - tc[k]) / 0.58f;
-    const float dh = (c.h - hc[k]) / 0.18f;
-    const float dr = (c.r - rc[k]) / 0.23f;
-    blobs += expf(-((da * da) + (dh * dh) + (dr * dr)));
+    const float kf = float(k);
+
+    const float thetaBase =
+        (k == 0) ? 0.20f :
+        (k == 1) ? 2.55f :
+                   4.55f;
+
+    const float thetaCenter =
+        thetaBase +
+        0.18f * sinf(0.00013f * t + 1.1f * kf) +
+        0.06f * sinf(0.00031f * t + 0.7f * kf);
+
+    float dtheta = c.theta - thetaCenter;
+    while (dtheta > 3.14159265f) dtheta -= 6.28318531f;
+    while (dtheta < -3.14159265f) dtheta += 6.28318531f;
+
+    const float hCenter =
+        (k == 0) ? (0.24f + 0.06f * sinf(0.00020f * t + 0.0f)) :
+        (k == 1) ? (0.47f + 0.07f * sinf(0.00017f * t + 1.7f)) :
+                   (0.69f + 0.06f * sinf(0.00016f * t + 3.1f));
+
+    const float rCenter =
+        (k == 0) ? 0.67f :
+        (k == 1) ? 0.61f :
+                   0.65f;
+
+    const float angW =
+        (k == 0) ? 0.48f :
+        (k == 1) ? 0.40f :
+                   0.36f;
+
+    const float hW =
+        (k == 0) ? 0.15f :
+        (k == 1) ? 0.16f :
+                   0.14f;
+
+    const float rW =
+        (k == 0) ? 0.22f :
+        (k == 1) ? 0.23f :
+                   0.20f;
+
+    const float blob =
+        expf(-(dtheta * dtheta) / (angW * angW)) *
+        expf(-((c.h - hCenter) * (c.h - hCenter)) / (hW * hW)) *
+        expf(-((c.r - rCenter) * (c.r - rCenter)) / (rW * rW));
+
+    blobs += 0.92f * blob;
   }
 
-  const float heat = expf(-c.h / 0.20f);
-  const float nW = cyCylinderNoise(c.theta, c.h, c.r, 2.0f, 3.6f, 2.0f, 0.0f, -0.00024f * t, 0.0f);
-  const float warp = 0.82f + 0.32f * nW;
-  const float waxRaw = (blobs * warp) + (0.22f * heat);
-  const float wax = cySmoothstep(0.48f, 0.72f, waxRaw);
-  return liquid + 1.35f * wax;
+  // thermal lift from below encourages reservoir->blob continuity
+  const float heat = 0.22f * expf(-c.h / 0.18f) * expf(-((c.r - 0.70f) * (c.r - 0.70f)) / 0.040f);
+
+  // combined wax scalar field
+  const float waxRaw = reservoir + blobs + heat;
+
+  // soft iso-threshold -> readable wax silhouettes
+  float wax = (waxRaw - 0.46f) / 0.28f;
+  if (wax < 0.0f) wax = 0.0f;
+  if (wax > 1.0f) wax = 1.0f;
+  wax = wax * wax * (3.0f - 2.0f * wax);
+
+  // bottom glow
+  const float bottomGlow =
+      0.16f *
+      expf(-c.h / 0.14f) *
+      (0.68f * resOuter + 0.32f * resInner);
+
+  float f = liquid + 1.32f * wax + bottomGlow;
+
+  // contrast shaping for diffuser readability
+  if (f < 0.0f) f = 0.0f;
+  f *= 1.22f;
+  if (f > 0.18f) {
+    f = 0.18f + (f - 0.18f) * 1.28f;
+  }
+  if (f > 1.0f) f = 1.0f;
+
+  return f;
 }
 
 static float cyFieldFlame(const CyCoord& c, float t) {
@@ -321,7 +386,12 @@ static CRGB cyColor(CyEffectKind kind, float energy, float theta, float t) {
         cyColorOr(2, CRGB(110, 250, 255))
       );
     case CY_EFFECT_LAVA_LAMP:
-      return cyBlend3(h, cyColorOr(0, CRGB(12, 0, 0)), cyColorOr(1, CRGB(218, 52, 0)), cyColorOr(2, CRGB(255, 136, 8)));
+      return cyBlend3(
+        h,
+        cyColorOr(0, CRGB(255, 150, 70)),
+        cyColorOr(1, CRGB(120, 40, 170)),
+        cyColorOr(2, CRGB(8, 14, 34))
+      );
     case CY_EFFECT_FLAME:
       if (energy < 0.28f) return blendRgb(CRGB::Black, CRGB(90, 0, 0), uint8_t(energy * 910.0f));
       if (energy < 0.62f) return blendRgb(CRGB(90, 0, 0), CRGB(230, 64, 0), uint8_t((energy - 0.28f) * 750.0f));
