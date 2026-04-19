@@ -17,7 +17,10 @@ struct RenderState {
 
 enum SceneId : uint8_t {
   SCENE_ID_LAVA = 1,
-  SCENE_ID_FLAME = 2
+  SCENE_ID_FLAME = 2,
+  SCENE_ID_ANEMONE = 3,
+  SCENE_ID_PLASMA_CORE = 4,
+  SCENE_ID_DEEP_NOISE = 5
 };
 
 struct SceneControls {
