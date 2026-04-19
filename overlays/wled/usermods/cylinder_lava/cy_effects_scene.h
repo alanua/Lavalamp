@@ -40,50 +40,81 @@ static inline float cySoftBand(float value, float center, float halfWidth) {
 }
 
 static float cyFieldAnemone(const CyCoord& c, float t) {
-  const float liquidWave = 0.5f + 0.5f * sinf((1.4f * c.theta) + (2.0f * c.h) - (0.00010f * t));
-  const float liquid = 0.018f + (0.012f * liquidWave);
+  // Dark, calm liquid. Keep background very low so the organism reads clearly.
+  const float liquidTop = 0.010f + 0.020f * c.h;
+  const float liquidRad = 0.010f * expf(-((c.r - 0.78f) * (c.r - 0.78f)) / 0.18f);
+  const float liquid = liquidTop + liquidRad;
 
-  const float baseH = cySoftBand(c.h, 0.085f, 0.115f);
-  const float baseOuter = cySoftBand(c.r, 0.88f, 0.24f);
-  const float baseInner = cySoftBand(c.r, 0.74f, 0.34f);
-  const float baseLobes = 0.92f + 0.08f * cosf((4.0f * c.theta) - (0.00022f * t));
-  const float base = 1.10f * baseH * ((0.68f * baseOuter) + (0.32f * baseInner)) * baseLobes;
+  // Strong anchored base at the floor.
+  const float baseY = expf(-((c.h - 0.075f) * (c.h - 0.075f)) / 0.0028f);
+  const float baseRim = expf(-((c.r - 0.82f) * (c.r - 0.82f)) / 0.010f);
+  const float baseCore = expf(-((c.r - 0.60f) * (c.r - 0.60f)) / 0.050f);
+  const float basePulse = 0.92f + 0.08f * sinf(0.0010f * t);
+  const float base = 1.45f * baseY * (0.72f * baseRim + 0.28f * baseCore) * basePulse;
 
-  const float crownH = cySoftBand(c.h, 0.150f, 0.075f);
-  const float crownR = cySoftBand(c.r, 0.90f, 0.18f);
-  const float crown = 0.32f * crownH * crownR * (0.78f + 0.22f * cosf((6.0f * c.theta) - (0.00055f * t)));
+  // Bright collar where tentacles start.
+  const float crownY = expf(-((c.h - 0.145f) * (c.h - 0.145f)) / 0.0022f);
+  const float crownR = expf(-((c.r - 0.84f) * (c.r - 0.84f)) / 0.008f);
+  const float crownLobes = 0.88f + 0.12f * cosf(5.0f * c.theta - 0.0011f * t);
+  const float crown = 0.60f * crownY * crownR * crownLobes;
 
+  // 5 thick visible tentacles, no noise, strong motion, cheap math.
   float tentacles = 0.0f;
   for (uint8_t j = 0; j < 5; j++) {
     const float jf = float(j);
-    const float phase = 0.90f * jf;
-    const float theta0 = CY_TWO_PI * (jf / 5.0f);
+    const float phase = 1.25663706f * jf; // 2*pi/5 * j
+    const float theta0 = phase;
 
-    const float root = 0.125f + (0.010f * sinf(phase));
-    const float sway = (0.055f + (0.020f * c.h)) * sinf((2.8f * c.h) - (0.00080f * t) + phase);
-    const float curl = 0.045f * sinf((7.0f * c.h) - (0.00105f * t) + (1.3f * phase));
-    const float center = theta0 + sway + curl;
+    // Big readable sway.
+    const float sway =
+        0.18f * sinf(0.00115f * t + phase) +
+        (0.10f + 0.22f * c.h) * sinf((3.4f * c.h) - (0.00175f * t) + 0.7f * phase);
 
-    const float dtheta = cyWrappedAngle(c.theta - center);
-    const float ang = cySoftBand(dtheta, 0.0f, 0.25f);
+    const float center = theta0 + sway;
+    float dtheta = c.theta - center;
+    while (dtheta > 3.14159265f) dtheta -= 6.28318531f;
+    while (dtheta < -3.14159265f) dtheta += 6.28318531f;
 
-    const float lift = cySmoothstep(root, root + 0.05f, c.h);
-    const float len = 0.44f + (0.05f * sinf(phase));
-    const float fallBase = cyClamp(1.0f - ((c.h - root) / len), 0.0f, 1.0f);
-    const float fall = fallBase * fallBase;
+    // Thick angular band.
+    const float ang = expf(-(dtheta * dtheta) / 0.090f);
 
-    const float radOuter = cySoftBand(c.r, 0.92f, 0.16f);
-    const float radInner = cySoftBand(c.r, 0.78f, 0.24f);
-    const float rad = (0.74f * radOuter) + (0.26f * radInner);
+    // Tentacle starts above the crown and rises upward.
+    const float root = 0.135f + 0.010f * sinf(phase);
+    float rise = (c.h - root) / 0.040f;
+    if (rise < 0.0f) rise = 0.0f;
+    if (rise > 1.0f) rise = 1.0f;
+    rise = rise * rise * (3.0f - 2.0f * rise);
 
-    const float edge = 0.92f + (0.08f * sinf((5.0f * c.h) - (0.00042f * t) + (1.7f * phase)));
+    const float len = 0.34f + 0.04f * sinf(phase + 0.3f);
+    const float fall = expf(-(c.h - root) / len);
 
-    tentacles += 0.58f * ang * lift * fall * rad * edge;
+    // Keep tentacles near the outer shell but with some thickness inward.
+    const float radOuter = expf(-((c.r - 0.86f) * (c.r - 0.86f)) / 0.006f);
+    const float radInner = expf(-((c.r - 0.72f) * (c.r - 0.72f)) / 0.020f);
+    const float rad = 0.78f * radOuter + 0.22f * radInner;
+
+    // Visible vertical beating / breathing.
+    const float beat = 0.84f + 0.16f * sinf((7.0f * c.h) - (0.0020f * t) + phase);
+
+    tentacles += 1.10f * ang * rise * fall * rad * beat;
   }
 
-  const float cavity = 0.08f * cySoftBand(c.h, 0.110f, 0.050f) * cySoftBand(c.r, 0.68f, 0.24f);
+  // Slight dark cavity above center to prevent full glowing blob wash.
+  const float cavityY = expf(-((c.h - 0.115f) * (c.h - 0.115f)) / 0.0018f);
+  const float cavityR = expf(-((c.r - 0.52f) * (c.r - 0.52f)) / 0.030f);
+  const float cavity = 0.22f * cavityY * cavityR;
 
-  return cyClamp(liquid + base + crown + tentacles - cavity, 0.0f, 1.35f);
+  float f = liquid + base + crown + tentacles - cavity;
+
+  // Harder contrast so diffuser does not wash it out.
+  if (f < 0.0f) f = 0.0f;
+  f = f * 1.35f;
+  if (f > 0.20f) {
+    f = 0.20f + (f - 0.20f) * 1.35f;
+  }
+  if (f > 1.0f) f = 1.0f;
+
+  return f;
 }
 
 static float cyFieldLavaLamp(const CyCoord& c, float t) {
@@ -281,9 +312,9 @@ static CRGB cyColor(CyEffectKind kind, float energy, float theta, float t) {
     case CY_EFFECT_ANEMONE:
       return cyBlend3(
         h,
-        cyColorOr(0, CRGB(2, 10, 28)),
-        cyColorOr(1, CRGB(86, 56, 196)),
-        cyColorOr(2, CRGB(150, 238, 255))
+        cyColorOr(0, CRGB(1, 3, 12)),
+        cyColorOr(1, CRGB(90, 20, 160)),
+        cyColorOr(2, CRGB(110, 250, 255))
       );
     case CY_EFFECT_LAVA_LAMP:
       return cyBlend3(h, cyColorOr(0, CRGB(12, 0, 0)), cyColorOr(1, CRGB(218, 52, 0)), cyColorOr(2, CRGB(255, 136, 8)));
