@@ -39,6 +39,10 @@ static inline float cySoftBand(float value, float center, float halfWidth) {
   return x * x * (3.0f - (2.0f * x));
 }
 
+static inline uint8_t cyRuntimeDepthSamples(CyEffectKind) {
+  return 1;
+}
+
 static float cyFieldAnemone(const CyCoord& c, float t) {
   // Dark, calm liquid. Keep background very low so the organism reads clearly.
   const float liquidTop = 0.010f + 0.020f * c.h;
@@ -187,10 +191,10 @@ static float cyFieldDeepNoise(const CyCoord& c, float t) {
 
 static float cyFieldAuroraTube(const CyCoord& c, float t) {
   const float curtain = 0.5f + 0.5f * sinf((2.2f * c.theta) + (5.4f * c.h) - (0.0008f * t));
-  const float nA = cyCylinderNoise(c.theta, c.h, c.r, 1.5f, 4.2f, 1.5f, 0.0f, -0.0004f * t, 0.0f);
+  const float shimmer = 0.5f + 0.5f * sinf((1.3f * c.theta) - (3.0f * c.h) + (0.00035f * t));
   const float upper = 0.75f + 0.25f * c.h;
   const float rad = cyGauss(c.r, 0.68f, 0.24f);
-  return cyPow(curtain, 1.5f) * (0.65f + 0.45f * nA) * upper * rad;
+  return (curtain * curtain) * (0.70f + 0.35f * shimmer) * upper * rad;
 }
 
 static float cyFieldInnerSwirl(const CyCoord& c, float t) {
@@ -200,11 +204,11 @@ static float cyFieldInnerSwirl(const CyCoord& c, float t) {
 }
 
 static float cyFieldBubblesVolume(const CyCoord& c, float t) {
-  const float nB1 = cyCylinderNoise(c.theta, c.h, c.r, 2.2f, 3.8f, 2.2f, 0.0f, -0.0003f * t, 0.0f);
-  const float nB2 = cyCylinderNoise(c.theta, c.h, c.r, 4.4f, 7.6f, 4.4f, 71.0f, -0.0004f * t, 29.0f);
+  const float nB1 = 0.5f + 0.5f * sinf((2.2f * c.theta) + (3.8f * c.h) - (0.0003f * t));
+  const float nB2 = 0.5f + 0.5f * cosf((4.4f * c.theta) - (2.9f * c.h) + (0.0004f * t));
   const float cell = fabsf(nB1 - nB2);
   const float body = cyGauss(c.r, 0.66f, 0.24f);
-  return cyPow(cell, 1.35f) * body;
+  return (cell * (0.65f + 0.35f * cell)) * body;
 }
 
 static float cyFieldRingRipple(const CyCoord& c, float t) {
@@ -226,9 +230,9 @@ static float cyFieldBottomRays(const CyCoord& c, float t) {
 
 static float cyFieldRisingBands(const CyCoord& c, float t) {
   const float bands = 0.5f + 0.5f * sinf((6.0f * c.theta) + (10.0f * c.h) - (0.0015f * t));
-  const float nRB = cyCylinderNoise(c.theta, c.h, c.r, 1.8f, 5.0f, 1.8f, 0.0f, -0.0011f * t, 0.0f);
+  const float drift = 0.5f + 0.5f * cosf((1.8f * c.theta) - (4.0f * c.h) + (0.0011f * t));
   const float rad = cyGauss(c.r, 0.74f, 0.18f);
-  return cyPow(bands, 1.3f) * (0.75f + 0.35f * nRB) * rad;
+  return (bands * (0.75f + 0.25f * bands)) * (0.75f + 0.35f * drift) * rad;
 }
 
 static float cyFieldHelicalPlasma(const CyCoord& c, float t) {
@@ -246,11 +250,11 @@ static float cyFieldNoiseWavesTube(const CyCoord& c, float t) {
 }
 
 static float cyFieldCellMembraneFlow(const CyCoord& c, float t) {
-  const float nC1 = cyCylinderNoise(c.theta, c.h, c.r, 2.4f, 4.4f, 2.4f, 0.0f, -0.0004f * t, 0.0f);
-  const float nC2 = cyCylinderNoise(c.theta, c.h, c.r, 4.8f, 8.8f, 4.8f, 19.0f, -0.0006f * t, 83.0f);
+  const float nC1 = 0.5f + 0.5f * sinf((2.4f * c.theta) + (4.4f * c.h) - (0.0004f * t));
+  const float nC2 = 0.5f + 0.5f * cosf((4.8f * c.theta) - (3.8f * c.h) + (0.0006f * t));
   const float mem = 1.0f - fabsf(nC1 - nC2);
   const float body = cyGauss(c.r, 0.66f, 0.24f);
-  return cyPow(mem, 1.8f) * body;
+  return (mem * mem) * body;
 }
 
 static float cyFieldCrossBandsTube(const CyCoord& c, float t) {
@@ -285,7 +289,7 @@ static float cyField(CyEffectKind kind, const CyCoord& c, float t) {
 static void buildCyField(SceneContext& context, CyEffectKind kind) {
   advanceMotion(context.motion, context.dt, MotionRates());
   const float t = float(strip.now);
-  const uint8_t depthSamples = kind == CY_EFFECT_ANEMONE ? 1 : CY_DEPTH_SAMPLES;
+  const uint8_t depthSamples = cyRuntimeDepthSamples(kind);
   float totalWeight = 0.0f;
   for (uint8_t sample = 0; sample < depthSamples; sample++) totalWeight += cyDepthWeight(sample);
 
