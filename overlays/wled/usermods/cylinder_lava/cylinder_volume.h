@@ -1,102 +1,113 @@
 #pragma once
 
+#include <math.h>
+
 #include "cylinder_scene_contract.h"
 
 namespace CylinderLamp {
 
-static constexpr uint8_t CYLINDER_DEPTH_SAMPLES = 4;
+static constexpr uint8_t CY_DEPTH_SAMPLES = 4;
+static constexpr float CY_PI = 3.14159265358979323846f;
+static constexpr float CY_TWO_PI = 6.28318530717958647692f;
+static constexpr float CY_DEPTH_K = 2.4f;
+static constexpr float CY_NOISE_SCALE = 256.0f;
 
-enum CylinderDepthProfile : uint8_t {
-  DEPTH_FADE_DEFAULT = 0,
-  DEPTH_FADE_PLASMA = 1,
-  DEPTH_FADE_DEEP = 2
+struct CyCoord {
+  float theta;
+  float h;
+  float r;
 };
 
-static inline uint8_t cylinderHeight8(uint8_t y, const Surface& surface) {
-  return heightFromBottom8(y, surface.height);
+static inline float cyClamp(float value, float low, float high) {
+  if (value < low) return low;
+  if (value > high) return high;
+  return value;
 }
 
-static inline uint8_t cylinderDepth8(uint8_t sample) {
-  return sample >= CYLINDER_DEPTH_SAMPLES ? 255 : uint8_t(sample * 85U);
+static inline float cyFract(float value) {
+  return value - floorf(value);
 }
 
-static inline uint8_t cylinderRadius8(uint8_t depth) {
-  return 255 - depth;
+static inline float cyWrappedAngle(float angle) {
+  while (angle > CY_PI) angle -= CY_TWO_PI;
+  while (angle < -CY_PI) angle += CY_TWO_PI;
+  return angle;
 }
 
-static inline uint8_t bellCurve8(uint8_t value, uint8_t center, uint8_t radius) {
-  int16_t distance = int16_t(value) - center;
-  if (distance < 0) distance = -distance;
-  if (distance >= radius) return 0;
-  return ease8InOutApprox(255 - uint8_t((uint16_t(distance) * 255U) / radius));
+static inline float cySmoothstep(float edge0, float edge1, float value) {
+  const float t = cyClamp((value - edge0) / (edge1 - edge0), 0.0f, 1.0f);
+  return t * t * (3.0f - 2.0f * t);
 }
 
-static inline uint8_t depthFade8(uint8_t sample, CylinderDepthProfile profile = DEPTH_FADE_DEFAULT) {
-  static const uint8_t defaultFade[CYLINDER_DEPTH_SAMPLES] = {255, 114, 52, 23};
-  static const uint8_t plasmaFade[CYLINDER_DEPTH_SAMPLES] = {255, 127, 63, 31};
-  static const uint8_t deepFade[CYLINDER_DEPTH_SAMPLES] = {255, 104, 42, 17};
-
-  if (sample >= CYLINDER_DEPTH_SAMPLES) sample = CYLINDER_DEPTH_SAMPLES - 1;
-  if (profile == DEPTH_FADE_PLASMA) return plasmaFade[sample];
-  if (profile == DEPTH_FADE_DEEP) return deepFade[sample];
-  return defaultFade[sample];
+static inline float cyGauss(float value, float center, float width) {
+  const float x = (value - center) / width;
+  return expf(-(x * x));
 }
 
-static inline uint16_t depthFadeTotal(CylinderDepthProfile profile = DEPTH_FADE_DEFAULT) {
-  uint16_t total = 0;
-  for (uint8_t i = 0; i < CYLINDER_DEPTH_SAMPLES; i++) total += depthFade8(i, profile);
-  return total ? total : 1;
+static inline float cyPow(float value, float exponent) {
+  if (value <= 0.0f) return 0.0f;
+  return powf(value, exponent);
 }
 
-static inline uint8_t normalizeDepthEnergy(uint32_t accumulated, CylinderDepthProfile profile = DEPTH_FADE_DEFAULT) {
-  const uint32_t total = depthFadeTotal(profile);
-  accumulated = (accumulated + (total >> 1)) / total;
-  return accumulated > 255U ? 255 : uint8_t(accumulated);
+static inline float cyDepth(uint8_t sample) {
+  return float(sample) / float(CY_DEPTH_SAMPLES - 1);
 }
 
-static inline uint16_t centeredNoiseCoord8(uint8_t wave, uint16_t scale, int32_t offset = 32768L) {
-  const int16_t centered = int16_t(wave) - 128;
-  return uint16_t(offset + int32_t(centered) * int32_t(scale));
+static inline float cyDepthWeight(uint8_t sample) {
+  return expf(-CY_DEPTH_K * cyDepth(sample));
 }
 
-static inline uint8_t wrappedCylinderNoise8(
-  uint8_t angle,
-  uint8_t height,
-  uint8_t radius,
-  uint16_t angularScale,
-  uint16_t verticalScale,
-  int32_t yPhase,
-  int32_t zPhase = 0
+static inline CyCoord cyCoord(uint8_t x, uint8_t y, uint8_t sample, const Surface& surface) {
+  CyCoord coord;
+  coord.theta = CY_TWO_PI * (float(x) / float(surface.width));
+  coord.h = surface.height <= 1 ? 0.0f : float(y) / float(surface.height - 1);
+  coord.r = 1.0f - cyDepth(sample);
+  return coord;
+}
+
+static inline uint16_t cyNoiseCoord(float value) {
+  return uint16_t(int32_t(value * CY_NOISE_SCALE));
+}
+
+static inline float cyNoise3(float x, float y, float z) {
+  return float(inoise8(cyNoiseCoord(x), cyNoiseCoord(y), cyNoiseCoord(z))) / 255.0f;
+}
+
+static inline float cyCylinderNoise(
+  float theta,
+  float h,
+  float r,
+  float sx,
+  float sy,
+  float sz,
+  float ox,
+  float oy,
+  float oz
 ) {
-  const uint16_t radialScale = scale8(radius, angularScale);
-  const uint16_t nx = centeredNoiseCoord8(cos8_t(angle), radialScale);
-  const uint16_t nz = centeredNoiseCoord8(sin8_t(angle), radialScale, 32768L + zPhase);
-  const uint16_t ny = uint16_t(uint32_t(height) * verticalScale + yPhase);
-  return inoise8(nx, ny, nz);
+  return cyNoise3((cosf(theta) * r * sx) + ox, (h * sy) + oy, (sinf(theta) * r * sz) + oz);
 }
 
-static inline uint8_t wrappedCylinderNoiseFixed8(
-  uint8_t angle,
-  uint8_t height,
-  uint16_t angularScale,
-  uint16_t verticalScale,
-  int32_t yPhase,
-  int32_t zPhase = 0
-) {
-  const uint16_t nx = centeredNoiseCoord8(cos8_t(angle), angularScale);
-  const uint16_t nz = centeredNoiseCoord8(sin8_t(angle), angularScale, 32768L + zPhase);
-  const uint16_t ny = uint16_t(uint32_t(height) * verticalScale + yPhase);
-  return inoise8(nx, ny, nz);
+static inline float cyHighlight(float energy) {
+  return cyPow(cyClamp(energy, 0.0f, 1.0f), 1.6f);
 }
 
-static inline void addWeightedDepth(uint32_t& target, uint8_t value, uint8_t sample, CylinderDepthProfile profile = DEPTH_FADE_DEFAULT) {
-  target += uint32_t(value) * depthFade8(sample, profile);
+static inline uint8_t cyEnergy8(float energy) {
+  energy = cyClamp(energy, 0.0f, 1.0f);
+  return uint8_t((energy * 255.0f) + 0.5f);
 }
 
-static inline CRGB palette3(uint8_t value, const CRGB& low, const CRGB& mid, const CRGB& high) {
-  if (value < 96) return blendRgb(CRGB::Black, low, uint8_t((uint16_t(value) * 255U) / 96U));
-  if (value < 190) return blendRgb(low, mid, uint8_t((uint16_t(value - 96) * 255U) / 94U));
-  return blendRgb(mid, high, uint8_t((uint16_t(value - 190) * 255U) / 65U));
+static inline CRGB cyColorOr(uint8_t slot, const CRGB& fallback) {
+  return colorOr(slot, fallback);
+}
+
+static inline CRGB cyBlend3(float amount, const CRGB& low, const CRGB& mid, const CRGB& high) {
+  amount = cyClamp(amount, 0.0f, 1.0f);
+  if (amount < 0.5f) return blendRgb(low, mid, uint8_t(amount * 510.0f));
+  return blendRgb(mid, high, uint8_t((amount - 0.5f) * 510.0f));
+}
+
+static inline void cyLimit(CRGB& color) {
+  limitColor(color, 248, 248, 248, 520);
 }
 
 } // namespace CylinderLamp
