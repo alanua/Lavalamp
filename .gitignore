@@ -1,0 +1,6 @@
+firmware/WLED/
+.pio/
+.vscode/
+*.bin
+*.elf
+*.map
