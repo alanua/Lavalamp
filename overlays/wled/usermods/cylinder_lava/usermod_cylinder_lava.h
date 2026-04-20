@@ -25,7 +25,7 @@ static uint16_t mode_cy_cell_membrane_flow();
 static uint16_t mode_cy_cross_bands_tube();
 
 static const char _data_FX_MODE_CY_ANEMONE[] PROGMEM =
-  "CY Anemone@Flow,Scale,Energy,Stability,Softness;Liquid,Organism,Tip;!;02;m12=0,sx=96,ix=140,c1=170,c2=160,c3=108";
+  "CY Anemone@Flow,X Scale,Y Scale,Stability,Legs;Liquid,Organism,Tip;!;02;m12=0,sx=96,ix=51,c1=51,c2=160,c3=108";
 
 static const char _data_FX_MODE_CY_LAVA_LAMP[] PROGMEM =
   "CY Lava Lamp@Flow,Scale,Energy,Stability,Softness;Liquid,Wax,Core;!;02;m12=0,sx=46,ix=150,c1=170,c2=190,c3=120";

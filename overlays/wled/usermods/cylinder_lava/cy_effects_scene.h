@@ -86,15 +86,19 @@ static inline FxCoord fxCoordFlatCentered(int x, int y, int W, int H) {
   return c;
 }
 
-static inline FxCoord fxCoordCylinderShell(int x, int y, int W, int H, float theta0, float h0) {
+static inline float octopusScaleFromUi(uint8_t value) {
+  return 0.5f + ((float(value) / 255.0f) * 2.5f);
+}
+
+static inline FxCoord fxCoordCylinderShell(int x, int y, int W, int H, float theta0, float h0, float scaleX, float scaleY) {
   const float u = (float(x) + 0.5f) / float(W);
   const float h = H <= 1 ? 0.0f : float(y) / float(H - 1);
   const float theta = CY_TWO_PI * u;
   const float a = cyWrapPi(theta - theta0);
 
   FxCoord c;
-  c.x = a * (float(W) / CY_TWO_PI);
-  c.y = (h - h0) * float(H);
+  c.x = a * (float(W) / CY_TWO_PI) * scaleX;
+  c.y = (h - h0) * float(H) * scaleY;
   return c;
 }
 
@@ -466,10 +470,12 @@ static void renderCyAnemone(RenderState&, const Surface& surface, uint16_t) {
   const int W = int(surface.width);
   const int H = int(surface.height);
   const uint16_t step = octopusStep(float(strip.now));
+  const float scaleX = octopusScaleFromUi(SEGMENT.intensity);
+  const float scaleY = octopusScaleFromUi(SEGMENT.custom1);
 
   for (uint8_t x = 0; x < surface.width; x++) {
     for (uint8_t y = 0; y < surface.height; y++) {
-      const FxCoord coord = fxCoordCylinderShell(x, y, W, H, 0.0f, 0.14f);
+      const FxCoord coord = fxCoordCylinderShell(x, y, W, H, 0.0f, 0.14f, scaleX, scaleY);
       const OctopusSample sample = octopusSampleFromCoord(coord, W, H);
       SEGMENT.setPixelColorXY(x, y, octopusKernel(sample, step, SEGMENT.custom3));
     }
