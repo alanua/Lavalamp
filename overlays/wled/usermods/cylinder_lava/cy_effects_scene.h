@@ -63,39 +63,63 @@ static inline float cyOpticalTransfer(float e) {
   return e;
 }
 
-struct CyOctopusSample {
+struct FxCoord {
+  float x;
+  float y;
+};
+
+struct OctopusSample {
   uint8_t angle;
   uint8_t radius;
 };
 
-static inline CyOctopusSample cyAnemoneOctopusSample(uint8_t x, uint8_t y, const Surface& surface) {
-  const float u = (float(x) + 0.5f) / float(surface.width);
-  const float h = surface.height <= 1 ? 0.0f : float(y) / float(surface.height - 1);
-  const float theta = CY_TWO_PI * u;
-  const float dx = cyWrappedAngle(theta - CY_PI) / CY_PI;
-  const float dy = 1.0f - (2.0f * h);
-  const uint8_t maxDim = surface.width > surface.height ? surface.width : surface.height;
-  const float radiusScale = 0.5f * float(maxDim) * float(180U / maxDim);
+static inline float cyWrapPi(float a) {
+  while (a > CY_PI) a -= CY_TWO_PI;
+  while (a < -CY_PI) a += CY_TWO_PI;
+  return a;
+}
 
-  CyOctopusSample sample;
-  sample.angle = uint8_t(int(40.7436f * atan2_t(dy, dx)));
-  sample.radius = uint8_t(cyClamp(sqrtf((dx * dx) + (dy * dy)) * radiusScale, 0.0f, 255.0f));
+static inline FxCoord fxCoordFlatCentered(int x, int y, int W, int H) {
+  FxCoord c;
+  c.x = float(x) - (0.5f * float(W));
+  c.y = float(y) - (0.5f * float(H));
+  return c;
+}
+
+static inline FxCoord fxCoordCylinderShell(int x, int y, int W, int H, float theta0, float h0) {
+  const float u = (float(x) + 0.5f) / float(W);
+  const float h = H <= 1 ? 0.0f : float(y) / float(H - 1);
+  const float theta = CY_TWO_PI * u;
+  const float a = cyWrapPi(theta - theta0);
+
+  FxCoord c;
+  c.x = a * (float(W) / CY_TWO_PI);
+  c.y = (h - h0) * float(H);
+  return c;
+}
+
+static inline OctopusSample octopusSampleFromCoord(const FxCoord& c, int W, int H) {
+  const uint8_t mapp = 180U / uint8_t(W > H ? W : H);
+
+  OctopusSample sample;
+  sample.angle = uint8_t(int(40.7436f * atan2_t(c.y, c.x)));
+  sample.radius = uint8_t(cyClamp(sqrtf((c.x * c.x) + (c.y * c.y)) * float(mapp), 0.0f, 255.0f));
   return sample;
 }
 
-static inline uint16_t cyAnemoneOctopusStep(float t) {
+static inline uint16_t octopusStep(float t) {
   const uint16_t speed = uint16_t(SEGMENT.speed / 32U) + 1U;
   return uint16_t(t * 0.04f * float(speed));
 }
 
-static inline uint8_t cyAnemoneOctopusIntensity(const CyOctopusSample& sample, uint16_t step) {
+static inline CRGB octopusKernel(const OctopusSample& sample, uint16_t step, uint8_t legsControl) {
   const uint8_t halfStep = uint8_t(step >> 1);
   const uint8_t step8 = uint8_t(step);
-  const uint8_t legs = uint8_t(SEGMENT.custom3 / 4U) + 1U;
+  const uint8_t legs = uint8_t(legsControl / 4U) + 1U;
   const uint8_t inner = sin8_t(uint8_t(((int(sample.angle) * 4 - int(sample.radius)) / 4) + int(halfStep)));
   uint16_t intensity = sin8_t(uint8_t(int(inner) + int(sample.radius) - int(step8) + (int(sample.angle) * int(legs))));
   intensity = uint16_t(map((intensity * intensity) & 0xFFFF, 0, 65535, 0, 255));
-  return uint8_t(intensity);
+  return ColorFromPalette(SEGPALETTE, uint8_t(halfStep - sample.radius), uint8_t(intensity));
 }
 
 static float cyFieldLavaLamp(const CyCoord& c, float t) {
@@ -439,14 +463,15 @@ static void outputCyField(SceneContext& context, CyEffectKind kind) {
 }
 
 static void renderCyAnemone(RenderState&, const Surface& surface, uint16_t) {
-  const uint16_t step = cyAnemoneOctopusStep(float(strip.now));
+  const int W = int(surface.width);
+  const int H = int(surface.height);
+  const uint16_t step = octopusStep(float(strip.now));
 
   for (uint8_t x = 0; x < surface.width; x++) {
     for (uint8_t y = 0; y < surface.height; y++) {
-      const CyOctopusSample sample = cyAnemoneOctopusSample(x, y, surface);
-      const uint8_t intensity = cyAnemoneOctopusIntensity(sample, step);
-      const CRGB color = ColorFromPalette(SEGPALETTE, uint8_t(uint8_t(step >> 1) - sample.radius), intensity);
-      SEGMENT.setPixelColorXY(x, y, color);
+      const FxCoord coord = fxCoordCylinderShell(x, y, W, H, 0.0f, 0.14f);
+      const OctopusSample sample = octopusSampleFromCoord(coord, W, H);
+      SEGMENT.setPixelColorXY(x, y, octopusKernel(sample, step, SEGMENT.custom3));
     }
   }
 }
