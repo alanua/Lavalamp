@@ -2,23 +2,13 @@ schema: lavalamp.project_manifest.v1
 status: REVIEW
 project: lavalamp
 repo: alanua/Lavalamp
-means: WLED transparent cylinder lava lamp firmware project
+means: WLED-based firmware and visual effects for a matte cylindrical 16x16 LED lamp with internal diffuser film
+
+hardware:
+  matrix: cylindrical_16x16
+  body: matte_cylindrical_glass
+  diffuser: internal_LED_TV_screen_or_backlight_diffuser_film
+  primary_controller: ESP32
+  secondary_controller: ESP8266_where_practical
 
 source_state:
-  current_repo_state: placeholder_manifest_only
-  current_code_status: not_yet_imported
-  known_runner_worktrees:
-    - /home/agent/agent-dev/worktrees/lavalamp/issue-731
-    - /home/agent/agent-dev/worktrees/lavalamp/issue-751
-    - /home/agent/agent-dev/worktrees/lavalamp/issue-785
-
-required_next_steps:
-  - import firmware overlay/source from runner worktree into repository through PR
-  - add build artifact policy
-  - add local OTA relay policy
-  - update Skeleton PROJECT_INDEX to point lavalamp to alanua/Lavalamp
-
-rules:
-  runtime_approval_required: true
-  ota_requires_explicit_approval: true
-  no_secrets_in_repo: true
