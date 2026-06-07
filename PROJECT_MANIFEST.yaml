@@ -9,8 +9,3 @@ hardware:
   diffuser: internal_LED_TV_screen_or_backlight_diffuser_film
   primary_controller: ESP32
   secondary_controller: ESP8266_where_practical
-rules:
-  runtime_approval_required: true
-  ota_requires_explicit_approval: true
-  no_secrets_in_repo: true
-  no
