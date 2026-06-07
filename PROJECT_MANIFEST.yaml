@@ -3,12 +3,14 @@ status: REVIEW
 project: lavalamp
 repo: alanua/Lavalamp
 means: WLED-based firmware and visual effects for a matte cylindrical 16x16 LED lamp with internal diffuser film
-
 hardware:
   matrix: cylindrical_16x16
   body: matte_cylindrical_glass
   diffuser: internal_LED_TV_screen_or_backlight_diffuser_film
   primary_controller: ESP32
   secondary_controller: ESP8266_where_practical
-
-source_state:
+rules:
+  runtime_approval_required: true
+  ota_requires_explicit_approval: true
+  no_secrets_in_repo: true
+  no
