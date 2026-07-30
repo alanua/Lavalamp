@@ -1,0 +1,24 @@
+diff --git a/wled00/usermods_list.cpp b/wled00/usermods_list.cpp
+index dfa0f80..9e9d59b 100644
+--- a/wled00/usermods_list.cpp
++++ b/wled00/usermods_list.cpp
+@@ -242,6 +242,10 @@
+ #include "../usermods/LD2410_v2/usermod_ld2410.h"
+ #endif
+ 
++#ifdef USERMOD_CYLINDER_LAVA
++#include "../usermods/cylinder_lava/usermod_cylinder_lava.h"
++#endif
++
+ void registerUsermods()
+ {
+ /*
+@@ -471,4 +475,8 @@ void registerUsermods()
+   #ifdef USERMOD_POV_DISPLAY
+   UsermodManager::add(new PovDisplayUsermod());
+   #endif
++
++  #ifdef USERMOD_CYLINDER_LAVA
++  UsermodManager::add(new CylinderLavaUsermod());
++  #endif
+ }
