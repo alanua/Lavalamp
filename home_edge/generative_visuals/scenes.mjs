@@ -53,7 +53,7 @@ export function deterministicSceneState(sceneId, seed, timestampMs, paletteOverr
   const waveA = Math.sin((slow * 6.2831853) + hash01(safeSeed, sceneIndex + 20) * 6.2831853);
   const waveB = Math.cos((slow * 4.3982297) + hash01(safeSeed, sceneIndex + 30) * 6.2831853);
   const directionAngle = slow * 1.618 + hash01(safeSeed, sceneIndex + 40) * 6.2831853;
-  const family = paletteOverride && PALETTE_FAMILIES[paletteOverride] ? paletteOverride : scene.family;
+  const family = paletteOverride && Object.hasOwn(PALETTE_FAMILIES, paletteOverride) ? paletteOverride : scene.family;
   return {
     scene_id: scene.id,
     timestamp_ms: Math.floor(Math.max(0, Number(timestampMs) || 0)),
@@ -67,6 +67,66 @@ export function deterministicSceneState(sceneId, seed, timestampMs, paletteOverr
     accent: clamp01(0.48 + 0.36 * Math.sin(directionAngle * 0.73 + sceneIndex)),
     source: 'generative',
   };
+}
+
+export function blendSceneStates(a, b, mixValue) {
+  if (!a || !b || a.seed !== b.seed || a.timestamp_ms !== b.timestamp_ms) {
+    throw new Error('scene states must share seed and timestamp');
+  }
+  const m = clamp01(Number(mixValue) || 0);
+  if (m <= 0) return structuredCloneState(a);
+  if (m >= 1) return structuredCloneState(b);
+  const direction = normalizeDirection(
+    lerp(a.direction.x, b.direction.x, m),
+    lerp(a.direction.y, b.direction.y, m),
+  );
+  return {
+    scene_id: m < 0.5 ? a.scene_id : b.scene_id,
+    timestamp_ms: a.timestamp_ms,
+    seed: a.seed,
+    palette: blendPalettes(a.palette, b.palette, m),
+    brightness: lerp(a.brightness, b.brightness, m),
+    energy: lerp(a.energy, b.energy, m),
+    tempo: lerp(a.tempo, b.tempo, m),
+    phase: blendPhase(a.phase, b.phase, m),
+    direction,
+    accent: lerp(a.accent, b.accent, m),
+    source: 'generative',
+  };
+}
+
+function blendPalettes(a, b, m) {
+  const count = Math.max(a.length, b.length);
+  return Array.from({ length: count }, (_, index) => {
+    const x = a[Math.min(index, a.length - 1)];
+    const y = b[Math.min(index, b.length - 1)];
+    return [lerp(x[0], y[0], m), lerp(x[1], y[1], m), lerp(x[2], y[2], m)];
+  });
+}
+
+function blendPhase(a, b, m) {
+  let delta = b - a;
+  if (delta > 0.5) delta -= 1;
+  if (delta < -0.5) delta += 1;
+  return ((a + delta * m) % 1 + 1) % 1;
+}
+
+function normalizeDirection(x, y) {
+  const length = Math.hypot(x, y);
+  if (length < 1e-9) return { x: 0, y: 0 };
+  return { x: x / length, y: y / length };
+}
+
+function structuredCloneState(state) {
+  return {
+    ...state,
+    palette: state.palette.map((rgb) => [...rgb]),
+    direction: { ...state.direction },
+  };
+}
+
+function lerp(a, b, m) {
+  return a + (b - a) * m;
 }
 
 function clamp01(value) {
