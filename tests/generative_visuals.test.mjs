@@ -52,3 +52,15 @@ test('runtime source contains no remote URLs or network APIs', () => {
     assert.doesNotMatch(text, /\b(fetch|XMLHttpRequest|WebSocket|EventSource)\s*\(/, name);
   }
 });
+
+test('GLSL smoothstep calls with literal edges are ordered', () => {
+  const source = fs.readFileSync(path.join(root, 'home_edge', 'generative_visuals', 'renderer.mjs'), 'utf8');
+  const literalSmoothstep = /smoothstep\(\s*(-?(?:\d+(?:\.\d*)?|\.\d+))\s*,\s*(-?(?:\d+(?:\.\d*)?|\.\d+))\s*,/g;
+  const matches = [...source.matchAll(literalSmoothstep)];
+  assert.ok(matches.length > 0);
+  for (const match of matches) {
+    const low = Number(match[1]);
+    const high = Number(match[2]);
+    assert.ok(low < high, `smoothstep edges must be ascending: ${match[0]}`);
+  }
+});
