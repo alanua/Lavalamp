@@ -76,10 +76,6 @@ export function blendSceneStates(a, b, mixValue) {
   const m = clamp01(Number(mixValue) || 0);
   if (m <= 0) return structuredCloneState(a);
   if (m >= 1) return structuredCloneState(b);
-  const direction = normalizeDirection(
-    lerp(a.direction.x, b.direction.x, m),
-    lerp(a.direction.y, b.direction.y, m),
-  );
   return {
     scene_id: m < 0.5 ? a.scene_id : b.scene_id,
     timestamp_ms: a.timestamp_ms,
@@ -89,7 +85,10 @@ export function blendSceneStates(a, b, mixValue) {
     energy: lerp(a.energy, b.energy, m),
     tempo: lerp(a.tempo, b.tempo, m),
     phase: blendPhase(a.phase, b.phase, m),
-    direction,
+    direction: {
+      x: lerp(a.direction.x, b.direction.x, m),
+      y: lerp(a.direction.y, b.direction.y, m),
+    },
     accent: lerp(a.accent, b.accent, m),
     source: 'generative',
   };
@@ -109,12 +108,6 @@ function blendPhase(a, b, m) {
   if (delta > 0.5) delta -= 1;
   if (delta < -0.5) delta += 1;
   return ((a + delta * m) % 1 + 1) % 1;
-}
-
-function normalizeDirection(x, y) {
-  const length = Math.hypot(x, y);
-  if (length < 1e-9) return { x: 0, y: 0 };
-  return { x: x / length, y: y / length };
 }
 
 function structuredCloneState(state) {
