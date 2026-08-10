@@ -26,7 +26,7 @@ uniform vec3 uPalette4;
 float hash21(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
 float hash31(vec3 p){ p=fract(p*.1031); p+=dot(p,p.yzx+33.33); return fract((p.x+p.y)*p.z); }
 float noise(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.-2.*f); return mix(mix(hash21(i),hash21(i+vec2(1,0)),f.x),mix(hash21(i+vec2(0,1)),hash21(i+1.),f.x),f.y); }
-float fbm(vec2 p){ float a=.5,v=0.; mat2 m=mat2(1.6,1.2,-1.2,1.6); for(int i=0;i<5;i++){v+=a*noise(p);p=m*p+.17;a*=.5;}return v; }
+float fbm(vec2 p){ float a=.5,v=0.; mat2 m=mat2(1.6,1.2,-1.2,1.6); int octaves=3+int(floor(clamp(uComplexity,0.,1.)*2.)); for(int i=0;i<5;i++){if(i>=octaves)break;v+=a*noise(p);p=m*p+.17;a*=.5;}return v; }
 mat2 rot(float a){ float c=cos(a),s=sin(a); return mat2(c,-s,s,c); }
 vec3 pal(float x){ x=clamp(x,0.,1.); if(x<.25)return mix(uPalette0,uPalette1,x*4.); if(x<.5)return mix(uPalette1,uPalette2,(x-.25)*4.); if(x<.75)return mix(uPalette2,uPalette3,(x-.5)*4.); return mix(uPalette3,uPalette4,(x-.75)*4.); }
 float softLine(float d,float w){ return exp(-abs(d)/max(w,.0001)); }
@@ -84,7 +84,7 @@ vec3 sceneColor(int scene, vec2 p, float t){
 }
 void main(){
   vec2 p=(gl_FragCoord.xy*2.-uResolution.xy)/min(uResolution.x,uResolution.y); float t=uTime*uMotion + uSeed*.013;
-  vec3 a=sceneColor(uSceneA,p,t); vec3 b=sceneColor(uSceneB,p,t); float m=smoothstep(0.,1.,uBlend); vec3 c=mix(a,b,m);
+  vec3 a=sceneColor(uSceneA,p,t); vec3 c=a; if(uSceneA!=uSceneB){vec3 b=sceneColor(uSceneB,p,t);float m=smoothstep(0.,1.,uBlend);c=mix(a,b,m);}
   c=1.-exp(-c*(1.05+.25*uComplexity)); c=pow(max(c,0.),vec3(.92)); fragColor=vec4(c,1.);
 }`;
 
