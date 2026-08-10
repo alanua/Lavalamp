@@ -37,7 +37,7 @@ let lastBus = 0;
 let hidden = document.hidden;
 
 renderer.setSeed(settings.seed);
-applyScenePalette(sceneA);
+renderer.setPalette(paletteFor(sceneA));
 setupDebug();
 window.lavalampSceneBus = Object.freeze({ subscribe: (cb) => subscribeSceneFrames(window, cb) });
 document.addEventListener('visibilitychange', () => { hidden = document.hidden; lastFrame = performance.now(); });
@@ -54,9 +54,10 @@ function frame(now) {
     let blend = 1;
     if (sceneA !== sceneB) {
       blend = clamp((now - transitionStart) / settings.transitionMs, 0, 1);
-      if (blend >= 1) { sceneA = sceneB; nextSwitch = now + settings.dwellMs; applyScenePalette(sceneA); }
+      if (blend >= 1) { sceneA = sceneB; nextSwitch = now + settings.dwellMs; }
     }
     renderer.setScenes(sceneA, sceneB, blend);
+    renderer.setPalette(blendPalettes(paletteFor(sceneA), paletteFor(sceneB), blend));
     renderer.setMotion(reducedMotion ? 0.28 : 1);
     renderer.setComplexity(complexityFor(sceneB));
     resize(); renderer.render(now / 1000);
@@ -71,7 +72,6 @@ function startTransition(index, now = performance.now()) {
   if (index === sceneA && sceneA === sceneB) return;
   sceneB = (index + SCENES.length) % SCENES.length;
   transitionStart = now;
-  applyScenePalette(sceneB);
   updateDebugSelection();
 }
 
@@ -90,7 +90,8 @@ function adaptQuality(now) {
 
 function nextScale(current, dir) { const steps=[.5,.625,.75,.875,1]; let i=steps.reduce((best,v,idx)=>Math.abs(v-current)<Math.abs(steps[best]-current)?idx:best,0); return steps[clamp(i+dir,0,steps.length-1)]; }
 function complexityFor(index) { const base=SCENES[index].complexity; const scaleFactor=.62+.38*settings.renderScale; return clamp((.7+base*.3)*scaleFactor,.5,1); }
-function applyScenePalette(index) { const family=settings.palette || SCENES[index].family; renderer.setPalette(PALETTE_FAMILIES[family]); }
+function paletteFor(index) { const family=settings.palette || SCENES[index].family; return PALETTE_FAMILIES[family]; }
+function blendPalettes(a,b,mixValue){ const out=[]; for(let i=0;i<5;i++){const x=a[Math.min(i,a.length-1)],y=b[Math.min(i,b.length-1)];out.push([x[0]+(y[0]-x[0])*mixValue,x[1]+(y[1]-x[1])*mixValue,x[2]+(y[2]-x[2])*mixValue]);}return out; }
 function emitBus(now) { const state=deterministicSceneState(SCENES[sceneB].id,settings.seed,Date.now(),settings.palette); emitSceneFrame(window,state); }
 
 function setupDebug() {
@@ -102,7 +103,7 @@ function setupDebug() {
   const pause=document.querySelector('#pause'); pause.addEventListener('click',()=>{settings.paused=!settings.paused;pause.textContent=settings.paused?'Resume':'Pause';});
   const auto=document.querySelector('#auto'); auto.checked=settings.autoRotate; auto.addEventListener('change',()=>settings.autoRotate=auto.checked);
   const quality=document.querySelector('#quality'); quality.value='auto'; quality.addEventListener('change',()=>{settings.qualityMode=quality.value;if(quality.value!=='auto')settings.renderScale=Number(quality.value);});
-  const palette=document.querySelector('#palette'); palette.add(new Option('Scene default','')); Object.keys(PALETTE_FAMILIES).forEach((k)=>palette.add(new Option(k,k))); palette.value=settings.palette||''; palette.addEventListener('change',()=>{settings.palette=palette.value||null;applyScenePalette(sceneB);});
+  const palette=document.querySelector('#palette'); palette.add(new Option('Scene default','')); Object.keys(PALETTE_FAMILIES).forEach((k)=>palette.add(new Option(k,k))); palette.value=settings.palette||''; palette.addEventListener('change',()=>{settings.palette=palette.value||null;renderer.setPalette(paletteFor(sceneB));});
 }
 function updateDebugSelection(){ if(!debug)return;document.querySelector('#scene').value=SCENES[sceneB].id; }
 function updateTelemetry(){ if(!debug)return;document.querySelector('#telemetry').textContent=`${fps.toFixed(1)} FPS · ${avgFrame.toFixed(1)} ms · scale ${settings.renderScale.toFixed(3)} · ${SCENES[sceneB].id}`; }
