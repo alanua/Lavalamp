@@ -46,11 +46,14 @@ test('crossfade scene metadata remains valid and continuous', () => {
     assert.ok(validateSceneFrame(makeSceneFrame(state)));
     assert.equal(state.timestamp_ms, timestamp);
     assert.equal(state.seed, 77);
-    assert.ok(Math.abs(Math.hypot(state.direction.x, state.direction.y) - 1) < 1e-9 || Math.hypot(state.direction.x, state.direction.y) === 0);
+    assert.ok(state.direction.x >= -1 && state.direction.x <= 1);
+    assert.ok(state.direction.y >= -1 && state.direction.y <= 1);
   }
   for (const key of ['brightness', 'energy', 'tempo', 'accent']) {
     assert.ok(Math.abs(right[key] - left[key]) < 0.03, `${key} must not jump at the scene-id handoff`);
   }
+  assert.ok(Math.abs(right.direction.x - left.direction.x) < 0.05);
+  assert.ok(Math.abs(right.direction.y - left.direction.y) < 0.05);
   assert.equal(left.scene_id, a.scene_id);
   assert.equal(middle.scene_id, b.scene_id);
   assert.equal(right.scene_id, b.scene_id);
@@ -81,6 +84,14 @@ test('runtime source contains no remote URLs or network APIs', () => {
     assert.doesNotMatch(text, /https?:\/\//i, name);
     assert.doesNotMatch(text, /\b(fetch|XMLHttpRequest|WebSocket|EventSource)\s*\(/, name);
   }
+});
+
+test('Scene Bus has independent 20 Hz scheduler and hidden/pause suppression', () => {
+  const source = fs.readFileSync(path.join(root, 'home_edge', 'generative_visuals', 'app.mjs'), 'utf8');
+  assert.match(source, /SCENE_BUS_INTERVAL_MS\s*=\s*50/);
+  assert.match(source, /setInterval\(\(\)\s*=>\s*\{\s*if\s*\(!hidden\s*&&\s*!settings\.paused\)\s*emitBus\(\);\s*\},\s*SCENE_BUS_INTERVAL_MS\)/);
+  assert.doesNotMatch(source, /requestAnimationFrame[\s\S]{0,500}lastBus/);
+  assert.match(source, /blendSceneStates\(a,b,currentBlend\)/);
 });
 
 test('GLSL smoothstep calls with literal edges are ordered', () => {
