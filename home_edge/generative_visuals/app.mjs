@@ -1,4 +1,4 @@
-import { SCENES, PALETTE_FAMILIES, deterministicSceneState, normalizeSeed } from './scenes.mjs';
+import { SCENES, PALETTE_FAMILIES, blendSceneStates, deterministicSceneState, normalizeSeed } from './scenes.mjs';
 import { emitSceneFrame, subscribeSceneFrames } from './scene-bus.mjs';
 import { GenerativeRenderer } from './renderer.mjs';
 
@@ -11,10 +11,11 @@ catch (error) { fatal.hidden = false; fatal.textContent = `WebGL2 is required: $
 const params = new URLSearchParams(location.search);
 const debug = params.get('debug') === '1';
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const requestedPalette = params.get('palette');
 const settings = {
   seed: normalizeSeed(params.get('seed') || Date.now()),
   scene: Math.max(0, SCENES.findIndex((s) => s.id === params.get('scene'))),
-  palette: params.get('palette') in PALETTE_FAMILIES ? params.get('palette') : null,
+  palette: requestedPalette && Object.hasOwn(PALETTE_FAMILIES, requestedPalette) ? requestedPalette : null,
   dwellMs: clamp(Number(params.get('dwell')) || 8 * 60_000, 5 * 60_000, 15 * 60_000),
   transitionMs: clamp(Number(params.get('transition')) || 3000, 2000, 4000),
   autoRotate: params.get('rotate') !== '0',
@@ -25,6 +26,7 @@ const settings = {
 let sceneA = settings.scene;
 let sceneB = settings.scene;
 let transitionStart = 0;
+let currentBlend = 1;
 let nextSwitch = performance.now() + settings.dwellMs;
 let lastFrame = performance.now();
 let avgFrame = 16.7;
@@ -56,14 +58,15 @@ function frame(now) {
       blend = clamp((now - transitionStart) / settings.transitionMs, 0, 1);
       if (blend >= 1) { sceneA = sceneB; nextSwitch = now + settings.dwellMs; }
     }
-    renderer.setScenes(sceneA, sceneB, blend);
-    renderer.setPalette(blendPalettes(paletteFor(sceneA), paletteFor(sceneB), blend));
+    currentBlend = sceneA === sceneB ? 1 : blend;
+    renderer.setScenes(sceneA, sceneB, currentBlend);
+    renderer.setPalette(blendPalettes(paletteFor(sceneA), paletteFor(sceneB), currentBlend));
     renderer.setMotion(reducedMotion ? 0.28 : 1);
-    renderer.setComplexity(complexityFor(sceneB));
+    renderer.setComplexity(lerp(complexityFor(sceneA), complexityFor(sceneB), currentBlend));
     resize(); renderer.render(now / 1000);
     frameCounter++;
     if (now - fpsStamp >= 1000) { fps = frameCounter * 1000 / (now - fpsStamp); frameCounter = 0; fpsStamp = now; updateTelemetry(); }
-    if (now - lastBus >= 50) { lastBus = now; emitBus(now); }
+    if (now - lastBus >= 50) { lastBus = now; emitBus(); }
   }
   requestAnimationFrame(frame);
 }
@@ -72,6 +75,7 @@ function startTransition(index, now = performance.now()) {
   if (index === sceneA && sceneA === sceneB) return;
   sceneB = (index + SCENES.length) % SCENES.length;
   transitionStart = now;
+  currentBlend = 0;
   updateDebugSelection();
 }
 
@@ -91,8 +95,8 @@ function adaptQuality(now) {
 function nextScale(current, dir) { const steps=[.5,.625,.75,.875,1]; let i=steps.reduce((best,v,idx)=>Math.abs(v-current)<Math.abs(steps[best]-current)?idx:best,0); return steps[clamp(i+dir,0,steps.length-1)]; }
 function complexityFor(index) { const base=SCENES[index].complexity; const scaleFactor=.62+.38*settings.renderScale; return clamp((.7+base*.3)*scaleFactor,.5,1); }
 function paletteFor(index) { const family=settings.palette || SCENES[index].family; return PALETTE_FAMILIES[family]; }
-function blendPalettes(a,b,mixValue){ const out=[]; for(let i=0;i<5;i++){const x=a[Math.min(i,a.length-1)],y=b[Math.min(i,b.length-1)];out.push([x[0]+(y[0]-x[0])*mixValue,x[1]+(y[1]-x[1])*mixValue,x[2]+(y[2]-x[2])*mixValue]);}return out; }
-function emitBus(now) { const state=deterministicSceneState(SCENES[sceneB].id,settings.seed,Date.now(),settings.palette); emitSceneFrame(window,state); }
+function blendPalettes(a,b,mixValue){ const out=[]; for(let i=0;i<5;i++){const x=a[Math.min(i,a.length-1)],y=b[Math.min(i,b.length-1)];out.push([lerp(x[0],y[0],mixValue),lerp(x[1],y[1],mixValue),lerp(x[2],y[2],mixValue)]);}return out; }
+function emitBus() { const timestamp=Date.now(); const a=deterministicSceneState(SCENES[sceneA].id,settings.seed,timestamp,settings.palette); if(sceneA===sceneB){emitSceneFrame(window,a);return;} const b=deterministicSceneState(SCENES[sceneB].id,settings.seed,timestamp,settings.palette); emitSceneFrame(window,blendSceneStates(a,b,currentBlend)); }
 
 function setupDebug() {
   const panel=document.querySelector('#debug'); panel.hidden=!debug; if(!debug)return;
@@ -107,4 +111,5 @@ function setupDebug() {
 }
 function updateDebugSelection(){ if(!debug)return;document.querySelector('#scene').value=SCENES[sceneB].id; }
 function updateTelemetry(){ if(!debug)return;document.querySelector('#telemetry').textContent=`${fps.toFixed(1)} FPS · ${avgFrame.toFixed(1)} ms · scale ${settings.renderScale.toFixed(3)} · ${SCENES[sceneB].id}`; }
+function lerp(a,b,m){ return a+(b-a)*m; }
 function clamp(value, low, high){ return Math.max(low,Math.min(high,value)); }
