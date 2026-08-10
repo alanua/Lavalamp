@@ -4,6 +4,7 @@ import { GenerativeRenderer } from './renderer.mjs';
 
 const canvas = document.querySelector('#stage');
 const fatal = document.querySelector('#fatal');
+const SCENE_BUS_INTERVAL_MS = 50;
 let renderer;
 try { renderer = new GenerativeRenderer(canvas); }
 catch (error) { fatal.hidden = false; fatal.textContent = `WebGL2 is required: ${error.message}`; throw error; }
@@ -35,7 +36,6 @@ let fastSince = 0;
 let frameCounter = 0;
 let fpsStamp = performance.now();
 let fps = 0;
-let lastBus = 0;
 let hidden = document.hidden;
 
 renderer.setSeed(settings.seed);
@@ -46,6 +46,7 @@ document.addEventListener('visibilitychange', () => { hidden = document.hidden; 
 addEventListener('resize', resize);
 resize();
 requestAnimationFrame(frame);
+setInterval(() => { if (!hidden && !settings.paused) emitBus(); }, SCENE_BUS_INTERVAL_MS);
 
 function frame(now) {
   const dt = Math.min(100, now - lastFrame); lastFrame = now;
@@ -62,11 +63,11 @@ function frame(now) {
     renderer.setScenes(sceneA, sceneB, currentBlend);
     renderer.setPalette(blendPalettes(paletteFor(sceneA), paletteFor(sceneB), currentBlend));
     renderer.setMotion(reducedMotion ? 0.28 : 1);
-    renderer.setComplexity(lerp(complexityFor(sceneA), complexityFor(sceneB), currentBlend));
+    const transitionQuality = sceneA === sceneB ? 1 : 0.82;
+    renderer.setComplexity(clamp(lerp(complexityFor(sceneA), complexityFor(sceneB), currentBlend) * transitionQuality, 0.5, 1));
     resize(); renderer.render(now / 1000);
     frameCounter++;
     if (now - fpsStamp >= 1000) { fps = frameCounter * 1000 / (now - fpsStamp); frameCounter = 0; fpsStamp = now; updateTelemetry(); }
-    if (now - lastBus >= 50) { lastBus = now; emitBus(); }
   }
   requestAnimationFrame(frame);
 }
