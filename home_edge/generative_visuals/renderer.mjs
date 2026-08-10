@@ -31,6 +31,7 @@ mat2 rot(float a){ float c=cos(a),s=sin(a); return mat2(c,-s,s,c); }
 vec3 pal(float x){ x=clamp(x,0.,1.); if(x<.25)return mix(uPalette0,uPalette1,x*4.); if(x<.5)return mix(uPalette1,uPalette2,(x-.25)*4.); if(x<.75)return mix(uPalette2,uPalette3,(x-.5)*4.); return mix(uPalette3,uPalette4,(x-.75)*4.); }
 float softLine(float d,float w){ return exp(-abs(d)/max(w,.0001)); }
 float invSmooth(float low,float high,float x){ return 1.-smoothstep(low,high,x); }
+float quality01(){ return clamp((uComplexity-.5)*2.,0.,1.); }
 
 vec3 infiniteLayers(vec2 p,float t){
   p*=rot(.12*sin(t*.08)); float r=length(p); float a=atan(p.y,p.x); float warp=.09*fbm(vec2(a*1.7+t*.03,r*4.-t*.04));
@@ -53,7 +54,7 @@ vec3 reactionDiffusion(vec2 p,float t){
   float a=fbm(p*4.+vec2(t*.015,0.)); float b=fbm(p*4.2+vec2(-t*.011,t*.009)+a*1.8); float v=sin((a-b)*32.+4.*fbm(p*2.)); float membrane=invSmooth(.02,.18,abs(v)); return vec3(.05+.9*membrane*(.55+.45*b));
 }
 vec3 metaballTunnel(vec2 p,float t){
-  float field=0.; for(int i=0;i<6;i++){ float fi=float(i); vec2 c=.48*vec2(sin(t*.035*(1.+fi*.09)+fi*1.7),cos(t*.028*(1.+fi*.07)+fi*2.3)); c*=.6+.12*fi; field += .075/(.015+dot(p-c,p-c)); }
+  float field=0.; float limit=3.+floor(3.*quality01()+.001); for(int i=0;i<6;i++){ float fi=float(i); if(fi>=limit)break; vec2 c=.48*vec2(sin(t*.035*(1.+fi*.09)+fi*1.7),cos(t*.028*(1.+fi*.07)+fi*2.3)); c*=.6+.12*fi; field += .075/(.015+dot(p-c,p-c)); }
   float shell=softLine(field-1.5,.32); float depth=smoothstep(0.,2.7,field); return mix(uPalette0,uPalette2,clamp(.18+shell*.65+depth*.2,0.,1.));
 }
 vec3 prismBloom(vec2 p,float t){
@@ -69,10 +70,10 @@ vec3 accretionHorizon(vec2 p,float t){
   float arc=softLine(r-(.53+.07*sin(a*3.-t*.05)),.035)*(.45+.55*cos(a-t*.04)); float lens=softLine(abs(p.y)-.19/(r+.18),.055)*invSmooth(.35,1.2,r); vec3 hot=mix(vec3(1.,.12,.01),vec3(1.,.9,.2),clamp(1.-r,0.,1.)); vec3 cool=mix(vec3(.03,.2,.8),vec3(.75,.95,1.),lens); vec3 c=hot*(disk+max(0.,arc)) + cool*lens*.55; c*=smoothstep(.24,.32,r); return c;
 }
 vec3 particleVeil(vec2 p,float t){
-  vec3 c=vec3(0.); for(int layer=0;layer<3;layer++){ float L=float(layer); vec2 q=p*(12.+L*7.); q.x+=sin(p.y*3.+t*.035+L)*2.; q.y+=cos(p.x*2.-t*.028+L)*1.4; vec2 id=floor(q),f=fract(q)-.5; float h=hash21(id+uSeed+L*19.); vec2 o=vec2(hash21(id+3.1),hash21(id+7.7))-.5; float d=length(f-o*.65); float pt=invSmooth(.015,.11,d)*step(.35,h); float veil=.35+.65*fbm(p*2.5+vec2(t*.01,-t*.012)); c+=pal(fract(h+.12*L))*pt*veil*(1.-L*.18); } return c;
+  vec3 c=vec3(0.); float layerLimit=1.+floor(2.*quality01()+.001); for(int layer=0;layer<3;layer++){ float L=float(layer); if(L>=layerLimit)break; vec2 q=p*(12.+L*7.); q.x+=sin(p.y*3.+t*.035+L)*2.; q.y+=cos(p.x*2.-t*.028+L)*1.4; vec2 id=floor(q),f=fract(q)-.5; float h=hash21(id+uSeed+L*19.); vec2 o=vec2(hash21(id+3.1),hash21(id+7.7))-.5; float d=length(f-o*.65); float pt=invSmooth(.015,.11,d)*step(.35,h); float veil=.35+.65*fbm(p*2.5+vec2(t*.01,-t*.012)); c+=pal(fract(h+.12*L))*pt*veil*(1.-L*.18); } return c;
 }
 vec3 chromaticGlass(vec2 p,float t){
-  vec3 c=vec3(0.); float minD=10.; for(int i=0;i<5;i++){ float fi=float(i); vec2 center=.45*vec2(sin(t*.022+fi*1.37),cos(t*.019+fi*1.91)); float radius=.18+.07*sin(fi*2.4+t*.017); float d=length(p-center)-radius; minD=min(minD,d); float rim=softLine(d,.022); float glow=exp(-max(0.,d)*9.)*step(d,0.); c+=pal(fract(fi*.23+t*.003))*rim*1.2 + pal(fract(.7+fi*.17))*glow*.16; } c+=vec3(.02)*invSmooth(-.18,.08,minD); return c;
+  vec3 c=vec3(0.); float minD=10.; float glassLimit=3.+floor(2.*quality01()+.001); for(int i=0;i<5;i++){ float fi=float(i); if(fi>=glassLimit)break; vec2 center=.45*vec2(sin(t*.022+fi*1.37),cos(t*.019+fi*1.91)); float radius=.18+.07*sin(fi*2.4+t*.017); float d=length(p-center)-radius; minD=min(minD,d); float rim=softLine(d,.022); float glow=exp(-max(0.,d)*9.)*step(d,0.); c+=pal(fract(fi*.23+t*.003))*rim*1.2 + pal(fract(.7+fi*.17))*glow*.16; } c+=vec3(.02)*invSmooth(-.18,.08,minD); return c;
 }
 vec3 volumetricLoom(vec2 p,float t){
   float a=fbm(p*1.8+vec2(t*.012,-t*.007)); float b=fbm((p+vec2(a,-a))*3.1+vec2(-t*.008,t*.011)); float c=fbm((p+vec2(b,a))*5.7-t*.004); float v=.45*a+.35*b+.2*c; float folds=softLine(fract(v*5.+.2*sin(t*.014))-.5,.12); return pal(clamp(v*.88+.08,0.,1.))*(.24+.82*folds);
