@@ -30,10 +30,11 @@ float fbm(vec2 p){ float a=.5,v=0.; mat2 m=mat2(1.6,1.2,-1.2,1.6); int octaves=3
 mat2 rot(float a){ float c=cos(a),s=sin(a); return mat2(c,-s,s,c); }
 vec3 pal(float x){ x=clamp(x,0.,1.); if(x<.25)return mix(uPalette0,uPalette1,x*4.); if(x<.5)return mix(uPalette1,uPalette2,(x-.25)*4.); if(x<.75)return mix(uPalette2,uPalette3,(x-.5)*4.); return mix(uPalette3,uPalette4,(x-.75)*4.); }
 float softLine(float d,float w){ return exp(-abs(d)/max(w,.0001)); }
+float invSmooth(float low,float high,float x){ return 1.-smoothstep(low,high,x); }
 
 vec3 infiniteLayers(vec2 p,float t){
   p*=rot(.12*sin(t*.08)); float r=length(p); float a=atan(p.y,p.x); float warp=.09*fbm(vec2(a*1.7+t*.03,r*4.-t*.04));
-  float z=1./max(.08,r+warp); float bands=abs(fract(z*1.55+t*.025+.04*sin(a*5.))-0.5); float edge=smoothstep(.2,.01,bands);
+  float z=1./max(.08,r+warp); float bands=abs(fract(z*1.55+t*.025+.04*sin(a*5.))-0.5); float edge=invSmooth(.01,.2,bands);
   float shade=.12+.88*edge*exp(-r*.55); return vec3(pow(shade,1.35));
 }
 vec3 organicSheet(vec2 p,float t){
@@ -42,14 +43,14 @@ vec3 organicSheet(vec2 p,float t){
   return vec3(clamp(.12+.85*sheet*rim*n,0.,1.));
 }
 vec3 topoFlow(vec2 p,float t){
-  float h=fbm(p*2.5+vec2(t*.018,-t*.013))+0.26*fbm(p*7.-t*.01); float contours=abs(fract(h*10.)-.5); float lines=smoothstep(.16,.025,contours); float base=.04+.36*h; return vec3(base+lines*.72);
+  float h=fbm(p*2.5+vec2(t*.018,-t*.013))+0.26*fbm(p*7.-t*.01); float contours=abs(fract(h*10.)-.5); float lines=invSmooth(.025,.16,contours); float base=.04+.36*h; return vec3(base+lines*.72);
 }
 vec3 porousSculpture(vec2 p,float t){
-  float r=length(p*vec2(.82,1.)); float mass=smoothstep(1.15,.25,r+.25*fbm(p*2.+t*.008)); float cells=fbm(p*6.+vec2(t*.012,-t*.01)); float holes=smoothstep(.67,.82,cells+.13*sin(t*.03+p.x*2.));
+  float r=length(p*vec2(.82,1.)); float mass=invSmooth(.25,1.15,r+.25*fbm(p*2.+t*.008)); float cells=fbm(p*6.+vec2(t*.012,-t*.01)); float holes=smoothstep(.67,.82,cells+.13*sin(t*.03+p.x*2.));
   float ridge=softLine(cells-.58,.055); float shade=mass*(.24+.76*(1.-holes))+.32*ridge*mass; return vec3(shade);
 }
 vec3 reactionDiffusion(vec2 p,float t){
-  float a=fbm(p*4.+vec2(t*.015,0.)); float b=fbm(p*4.2+vec2(-t*.011,t*.009)+a*1.8); float v=sin((a-b)*32.+4.*fbm(p*2.)); float membrane=smoothstep(.18,.02,abs(v)); return vec3(.05+.9*membrane*(.55+.45*b));
+  float a=fbm(p*4.+vec2(t*.015,0.)); float b=fbm(p*4.2+vec2(-t*.011,t*.009)+a*1.8); float v=sin((a-b)*32.+4.*fbm(p*2.)); float membrane=invSmooth(.02,.18,abs(v)); return vec3(.05+.9*membrane*(.55+.45*b));
 }
 vec3 metaballTunnel(vec2 p,float t){
   float field=0.; for(int i=0;i<6;i++){ float fi=float(i); vec2 c=.48*vec2(sin(t*.035*(1.+fi*.09)+fi*1.7),cos(t*.028*(1.+fi*.07)+fi*2.3)); c*=.6+.12*fi; field += .075/(.015+dot(p-c,p-c)); }
@@ -60,18 +61,18 @@ vec3 prismBloom(vec2 p,float t){
   float inner=exp(-r*2.8); vec3 c=pal(fract(.62+.18*sin(a*2.+t*.02)+r*.35)); return c*(.15+.9*membrane)+mix(uPalette0,uPalette3,inner)*inner*.65;
 }
 vec3 spectralFlame(vec2 p,float t){
-  p.y+=.35; float rise=(p.y+1.)*.6; float n=fbm(vec2(p.x*3.2,p.y*2.1-t*.12))+0.45*fbm(vec2(p.x*7.-t*.03,p.y*4.-t*.18)); float width=.18+.45*(1.-clamp(rise,0.,1.)); float d=abs(p.x+.25*(n-.5))-width*(.55+.5*n); float flame=smoothstep(.16,-.02,d)*smoothstep(1.25,-.35,p.y);
-  float core=smoothstep(.08,-.02,abs(p.x+.12*(n-.5))-.10)*flame; vec3 c=pal(clamp(.2+.72*rise+.18*n,0.,1.)); return c*flame*1.05+vec3(1.)*core*.85;
+  p.y+=.35; float rise=(p.y+1.)*.6; float n=fbm(vec2(p.x*3.2,p.y*2.1-t*.12))+0.45*fbm(vec2(p.x*7.-t*.03,p.y*4.-t*.18)); float width=.18+.45*(1.-clamp(rise,0.,1.)); float d=abs(p.x+.25*(n-.5))-width*(.55+.5*n); float flame=invSmooth(-.02,.16,d)*invSmooth(-.35,1.25,p.y);
+  float core=invSmooth(-.02,.08,abs(p.x+.12*(n-.5))-.10)*flame; vec3 c=pal(clamp(.2+.72*rise+.18*n,0.,1.)); return c*flame*1.05+vec3(1.)*core*.85;
 }
 vec3 accretionHorizon(vec2 p,float t){
-  p*=rot(.08*sin(t*.02)); float r=length(p),a=atan(p.y,p.x); float diskY=p.y*(2.5+.5*sin(a+t*.02)); float disk=exp(-abs(diskY)/.055)*smoothstep(1.35,.25,r)*smoothstep(.22,.36,r);
-  float arc=softLine(r-(.53+.07*sin(a*3.-t*.05)),.035)*(.45+.55*cos(a-t*.04)); float lens=softLine(abs(p.y)-.19/(r+.18),.055)*smoothstep(1.2,.35,r); vec3 hot=mix(vec3(1.,.12,.01),vec3(1.,.9,.2),clamp(1.-r,0.,1.)); vec3 cool=mix(vec3(.03,.2,.8),vec3(.75,.95,1.),lens); vec3 c=hot*(disk+max(0.,arc)) + cool*lens*.55; c*=smoothstep(.24,.32,r); return c;
+  p*=rot(.08*sin(t*.02)); float r=length(p),a=atan(p.y,p.x); float diskY=p.y*(2.5+.5*sin(a+t*.02)); float disk=exp(-abs(diskY)/.055)*invSmooth(.25,1.35,r)*smoothstep(.22,.36,r);
+  float arc=softLine(r-(.53+.07*sin(a*3.-t*.05)),.035)*(.45+.55*cos(a-t*.04)); float lens=softLine(abs(p.y)-.19/(r+.18),.055)*invSmooth(.35,1.2,r); vec3 hot=mix(vec3(1.,.12,.01),vec3(1.,.9,.2),clamp(1.-r,0.,1.)); vec3 cool=mix(vec3(.03,.2,.8),vec3(.75,.95,1.),lens); vec3 c=hot*(disk+max(0.,arc)) + cool*lens*.55; c*=smoothstep(.24,.32,r); return c;
 }
 vec3 particleVeil(vec2 p,float t){
-  vec3 c=vec3(0.); for(int layer=0;layer<3;layer++){ float L=float(layer); vec2 q=p*(12.+L*7.); q.x+=sin(p.y*3.+t*.035+L)*2.; q.y+=cos(p.x*2.-t*.028+L)*1.4; vec2 id=floor(q),f=fract(q)-.5; float h=hash21(id+uSeed+L*19.); vec2 o=vec2(hash21(id+3.1),hash21(id+7.7))-.5; float d=length(f-o*.65); float pt=smoothstep(.11,.015,d)*step(.35,h); float veil=.35+.65*fbm(p*2.5+vec2(t*.01,-t*.012)); c+=pal(fract(h+.12*L))*pt*veil*(1.-L*.18); } return c;
+  vec3 c=vec3(0.); for(int layer=0;layer<3;layer++){ float L=float(layer); vec2 q=p*(12.+L*7.); q.x+=sin(p.y*3.+t*.035+L)*2.; q.y+=cos(p.x*2.-t*.028+L)*1.4; vec2 id=floor(q),f=fract(q)-.5; float h=hash21(id+uSeed+L*19.); vec2 o=vec2(hash21(id+3.1),hash21(id+7.7))-.5; float d=length(f-o*.65); float pt=invSmooth(.015,.11,d)*step(.35,h); float veil=.35+.65*fbm(p*2.5+vec2(t*.01,-t*.012)); c+=pal(fract(h+.12*L))*pt*veil*(1.-L*.18); } return c;
 }
 vec3 chromaticGlass(vec2 p,float t){
-  vec3 c=vec3(0.); float minD=10.; for(int i=0;i<5;i++){ float fi=float(i); vec2 center=.45*vec2(sin(t*.022+fi*1.37),cos(t*.019+fi*1.91)); float radius=.18+.07*sin(fi*2.4+t*.017); float d=length(p-center)-radius; minD=min(minD,d); float rim=softLine(d,.022); float glow=exp(-max(0.,d)*9.)*step(d,0.); c+=pal(fract(fi*.23+t*.003))*rim*1.2 + pal(fract(.7+fi*.17))*glow*.16; } c+=vec3(.02)*smoothstep(.08,-.18,minD); return c;
+  vec3 c=vec3(0.); float minD=10.; for(int i=0;i<5;i++){ float fi=float(i); vec2 center=.45*vec2(sin(t*.022+fi*1.37),cos(t*.019+fi*1.91)); float radius=.18+.07*sin(fi*2.4+t*.017); float d=length(p-center)-radius; minD=min(minD,d); float rim=softLine(d,.022); float glow=exp(-max(0.,d)*9.)*step(d,0.); c+=pal(fract(fi*.23+t*.003))*rim*1.2 + pal(fract(.7+fi*.17))*glow*.16; } c+=vec3(.02)*invSmooth(-.18,.08,minD); return c;
 }
 vec3 volumetricLoom(vec2 p,float t){
   float a=fbm(p*1.8+vec2(t*.012,-t*.007)); float b=fbm((p+vec2(a,-a))*3.1+vec2(-t*.008,t*.011)); float c=fbm((p+vec2(b,a))*5.7-t*.004); float v=.45*a+.35*b+.2*c; float folds=softLine(fract(v*5.+.2*sin(t*.014))-.5,.12); return pal(clamp(v*.88+.08,0.,1.))*(.24+.82*folds);
