@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Lavalamp Generative Visuals</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <canvas id="stage" aria-label="Generative visual renderer"></canvas>
+  <div id="fatal" hidden role="alert"></div>
+  <section id="debug" hidden aria-label="Debug controls">
+    <label>Scene <select id="scene"></select></label>
+    <label>Seed <input id="seed" inputmode="numeric"></label>
+    <button id="randomize" type="button">Randomize</button>
+    <button id="pause" type="button">Pause</button>
+    <label>Auto rotate <input id="auto" type="checkbox"></label>
+    <label>Quality <select id="quality"><option value="auto">Auto</option><option value="1">100%</option><option value="0.875">87.5%</option><option value="0.75">75%</option><option value="0.625">62.5%</option><option value="0.5">50%</option></select></label>
+    <label>Palette <select id="palette"></select></label>
+    <output id="telemetry"></output>
+  </section>
+  <script type="module" src="./app.mjs"></script>
+</body>
+</html>
