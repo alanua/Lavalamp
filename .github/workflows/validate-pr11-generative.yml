@@ -1,0 +1,41 @@
+name: validate-pr11-generative
+
+on:
+  push:
+    branches:
+      - validation/pr11-node-ci-v2
+
+permissions:
+  contents: read
+
+jobs:
+  node-source-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact validation branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Prove exact source parent
+        run: |
+          set -euo pipefail
+          node --version
+          test "$(git rev-parse HEAD^)" = "07d6848187b113ed21e378c58e33cafb74700fbe"
+          test -z "$(git diff --name-only HEAD^ -- home_edge/generative_visuals tests/generative_visuals.test.mjs)"
+      - name: Generative visual tests
+        run: |
+          set -euo pipefail
+          node --test tests/generative_visuals.test.mjs
+      - name: Syntax checks
+        run: |
+          set -euo pipefail
+          node --check home_edge/generative_visuals/app.mjs
+          node --check home_edge/generative_visuals/renderer.mjs
+          node --check home_edge/generative_visuals/scene-bus.mjs
+          node --check home_edge/generative_visuals/scenes.mjs
+      - name: Diff check
+        run: |
+          set -euo pipefail
+          git diff --check HEAD^
