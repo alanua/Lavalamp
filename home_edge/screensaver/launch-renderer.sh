@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export DISPLAY="${DISPLAY:-:0}"
+export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
 ROOT="${SKELETON_GENERATIVE_ROOT:-$HOME/.local/lib/lavalamp-home-edge}"
 PORT="${SKELETON_SCREENSAVER_PORT:-8765}"
 RUNTIME_ROOT="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/skeleton-generative-saver"
@@ -68,4 +70,4 @@ fi
   --disable-session-crashed-bubble \
   --disable-infobars \
   --autoplay-policy=no-user-gesture-required \
-  --ozone-platform-hint=auto
+  --ozone-platform=x11

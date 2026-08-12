@@ -19,9 +19,20 @@ required=(
 for path in "${required[@]}"; do
   [[ -f "$path" ]] || { echo "missing_source=$path" >&2; exit 2; }
 done
-for cmd in /usr/bin/python3 /usr/bin/gdbus /usr/bin/systemctl /usr/bin/flock; do
+for cmd in /usr/bin/python3 /usr/bin/loginctl /usr/bin/systemctl /usr/bin/flock; do
   [[ -x "$cmd" ]] || { echo "missing_command=$cmd" >&2; exit 3; }
 done
+
+# Verify the canonical Openbox/X11 idle dependencies without installing packages.
+if ! /usr/bin/python3 - <<'PY'
+import ctypes, ctypes.util
+for name, fallback in (("X11", "libX11.so.6"), ("Xss", "libXss.so.1")):
+    ctypes.CDLL(ctypes.util.find_library(name) or fallback)
+PY
+then
+  echo 'missing_x11_idle_library=true' >&2
+  exit 4
+fi
 
 mkdir -p "$STATE" "$UNIT_DIR" "$ENV_DIR" "$BACKUP"
 chmod 700 "$STATE" "$ENV_DIR" "$BACKUP"
@@ -64,6 +75,7 @@ fi
 /usr/bin/systemctl --user enable --now skeleton-generative-saver.service
 
 printf 'install_status=APPLIED\n'
+printf 'desktop_contract=lightdm_openbox_x11\n'
 printf 'target=%s\n' "$TARGET"
 printf 'unit=skeleton-generative-saver.service\n'
 printf 'lock_policy_changed=false\n'

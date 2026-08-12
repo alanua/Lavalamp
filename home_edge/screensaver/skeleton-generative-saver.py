@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""GNOME/Wayland idle controller for the local Lavalamp generative renderer.
+"""Openbox/X11 idle controller for the local Lavalamp generative renderer.
 
-The controller never changes lock/authentication or DPMS policy. It only owns the
-visual saver process while GNOME reports the session idle, the session is unlocked,
-and the canonical media-display-ownership guard explicitly reports CLEAR.
+The controller never changes lock/authentication or DPMS policy. It reads the X11
+ScreenSaver extension for real input idle time, reads logind LockedHint for session
+lock state, and starts the visual renderer only when the canonical media ownership
+guard explicitly reports CLEAR.
 """
 from __future__ import annotations
 
 import argparse
+import ctypes
+import ctypes.util
 import json
 import os
 from pathlib import Path
@@ -17,7 +20,7 @@ import subprocess
 import sys
 import time
 
-GDBUS = "/usr/bin/gdbus"
+LOGINCTL = "/usr/bin/loginctl"
 DEFAULT_ROOT = Path.home() / ".local/lib/lavalamp-home-edge"
 DEFAULT_GUARD = Path.home() / ".local/bin/home-edge-media-display-owner"
 DEFAULT_LAUNCHER = DEFAULT_ROOT / "home_edge/screensaver/launch-renderer.sh"
@@ -41,54 +44,120 @@ RESTART_BACKOFF_SECONDS = _positive_float(
     "SKELETON_SCREENSAVER_RESTART_BACKOFF_SECONDS", 10.0, 2.0, 300.0
 )
 
+# Canonical Debian media bootstrap is LightDM + Openbox/Xorg. systemd --user may
+# start before the graphical environment has imported these values, so use only
+# fixed local defaults and fail closed until the X server/auth cookie is readable.
+os.environ.setdefault("DISPLAY", ":0")
+os.environ.setdefault("XAUTHORITY", str(Path.home() / ".Xauthority"))
+
 
 def _run(argv: list[str], timeout: float = 3.0) -> subprocess.CompletedProcess[str]:
     return subprocess.run(argv, text=True, capture_output=True, timeout=timeout, check=False)
 
 
-def _gdbus_call(method: str) -> str:
-    process = _run(
-        [
-            GDBUS,
-            "call",
-            "--session",
-            "--dest",
-            "org.gnome.Mutter.IdleMonitor" if method == "GetIdletime" else "org.gnome.ScreenSaver",
-            "--object-path",
-            "/org/gnome/Mutter/IdleMonitor/Core" if method == "GetIdletime" else "/org/gnome/ScreenSaver",
-            "--method",
-            f"org.gnome.Mutter.IdleMonitor.{method}" if method == "GetIdletime" else f"org.gnome.ScreenSaver.{method}",
-        ],
-        timeout=2.5,
-    )
+class _XScreenSaverInfo(ctypes.Structure):
+    _fields_ = [
+        ("window", ctypes.c_ulong),
+        ("state", ctypes.c_int),
+        ("kind", ctypes.c_int),
+        ("since", ctypes.c_ulong),
+        ("idle", ctypes.c_ulong),
+        ("event_mask", ctypes.c_ulong),
+    ]
+
+
+def x11_idle_ms() -> int:
+    x11_name = ctypes.util.find_library("X11") or "libX11.so.6"
+    xss_name = ctypes.util.find_library("Xss") or "libXss.so.1"
+    try:
+        x11 = ctypes.CDLL(x11_name)
+        xss = ctypes.CDLL(xss_name)
+    except OSError as exc:
+        raise RuntimeError("x11_idle_library_unavailable") from exc
+
+    x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+    x11.XOpenDisplay.restype = ctypes.c_void_p
+    x11.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+    x11.XDefaultRootWindow.restype = ctypes.c_ulong
+    x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+    x11.XCloseDisplay.restype = ctypes.c_int
+    x11.XFree.argtypes = [ctypes.c_void_p]
+    x11.XFree.restype = ctypes.c_int
+    xss.XScreenSaverAllocInfo.argtypes = []
+    xss.XScreenSaverAllocInfo.restype = ctypes.POINTER(_XScreenSaverInfo)
+    xss.XScreenSaverQueryInfo.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_ulong,
+        ctypes.POINTER(_XScreenSaverInfo),
+    ]
+    xss.XScreenSaverQueryInfo.restype = ctypes.c_int
+
+    display_name = os.environ.get("DISPLAY", ":0").encode("utf-8")
+    display = x11.XOpenDisplay(display_name)
+    if not display:
+        raise RuntimeError("x11_display_unavailable")
+    info = xss.XScreenSaverAllocInfo()
+    if not info:
+        x11.XCloseDisplay(display)
+        raise RuntimeError("x11_idle_alloc_failed")
+    try:
+        root = x11.XDefaultRootWindow(display)
+        if not xss.XScreenSaverQueryInfo(display, root, info):
+            raise RuntimeError("x11_idle_query_failed")
+        return int(info.contents.idle)
+    finally:
+        x11.XFree(ctypes.cast(info, ctypes.c_void_p))
+        x11.XCloseDisplay(display)
+
+
+def _session_property(session_id: str, prop: str) -> str:
+    process = _run([LOGINCTL, "show-session", session_id, f"--property={prop}", "--value"], timeout=2.0)
     if process.returncode != 0:
-        raise RuntimeError(f"gnome_{method.lower()}_unavailable")
-    return process.stdout.strip()
+        raise RuntimeError("logind_session_query_failed")
+    return process.stdout.strip().lower()
 
 
-def gnome_idle_ms() -> int:
-    output = _gdbus_call("GetIdletime")
-    match = re.search(r"\b(?:uint64\s+)?(\d+)\b", output)
-    if not match:
-        raise RuntimeError("gnome_idle_parse_failed")
-    return int(match.group(1))
+def _active_session_id() -> str:
+    explicit = os.environ.get("XDG_SESSION_ID", "").strip()
+    if explicit:
+        try:
+            if _session_property(explicit, "Active") == "yes":
+                return explicit
+        except Exception:
+            pass
+    process = _run([LOGINCTL, "list-sessions", "--no-legend", "--no-pager"], timeout=2.0)
+    if process.returncode != 0:
+        raise RuntimeError("logind_session_list_failed")
+    uid = str(os.getuid())
+    candidates: list[str] = []
+    for line in process.stdout.splitlines():
+        fields = line.split()
+        if len(fields) >= 2 and fields[1] == uid and re.fullmatch(r"[A-Za-z0-9_.-]+", fields[0]):
+            candidates.append(fields[0])
+    for session_id in candidates:
+        try:
+            if _session_property(session_id, "Active") == "yes":
+                return session_id
+        except Exception:
+            continue
+    raise RuntimeError("active_logind_session_unavailable")
 
 
-def gnome_locked() -> bool:
-    output = _gdbus_call("GetActive").lower()
-    if "true" in output:
+def session_locked() -> bool:
+    value = _session_property(_active_session_id(), "LockedHint")
+    if value == "yes":
         return True
-    if "false" in output:
+    if value == "no":
         return False
-    raise RuntimeError("gnome_lock_parse_failed")
+    raise RuntimeError("logind_lock_state_unknown")
 
 
 def media_ownership() -> str:
-    """Return OWNER, CLEAR or UNKNOWN.
+    """Return OWNER, CLEAR or UNKNOWN from the canonical Home Edge guard.
 
-    The guard is an existing Skeleton/Home Edge authority adapter. Exit 0 means a
-    confirmed video session owns the display; exit 1 means explicitly clear; every
-    other result fails closed as UNKNOWN. No title/URL/session metadata is consumed.
+    Exit 0 means a confirmed video session owns the display; exit 1 means explicitly
+    clear; every other result fails closed. No title/URL/account/session payload is
+    consumed by this controller.
     """
     guard = Path(os.environ.get("SKELETON_SCREENSAVER_MEDIA_GUARD", str(DEFAULT_GUARD))).expanduser()
     if not guard.is_file() or not os.access(guard, os.X_OK):
@@ -164,22 +233,23 @@ class RendererProcess:
 def status_snapshot() -> dict[str, object]:
     result: dict[str, object] = {
         "component": "skeleton-generative-saver",
+        "desktop_contract": "lightdm_openbox_x11",
         "idle_threshold_seconds": IDLE_SECONDS,
         "post_media_grace_seconds": POST_MEDIA_GRACE_SECONDS,
         "media_ownership": media_ownership(),
         "launcher_ready": _launcher_path().is_file() and os.access(_launcher_path(), os.X_OK),
-        "display_env_present": bool(os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")),
+        "display_env_present": bool(os.environ.get("DISPLAY")),
     }
     try:
-        result["gnome_idle_ms"] = gnome_idle_ms()
-        result["gnome_idle_available"] = True
+        result["x11_idle_ms"] = x11_idle_ms()
+        result["x11_idle_available"] = True
     except Exception:
-        result["gnome_idle_available"] = False
+        result["x11_idle_available"] = False
     try:
-        result["locked"] = gnome_locked()
-        result["gnome_lock_available"] = True
+        result["locked"] = session_locked()
+        result["logind_lock_available"] = True
     except Exception:
-        result["gnome_lock_available"] = False
+        result["logind_lock_available"] = False
     return result
 
 
@@ -200,6 +270,7 @@ def run_loop() -> int:
     signal.signal(signal.SIGINT, request_stop)
     _public_log(
         "controller_started",
+        desktop_contract="lightdm_openbox_x11",
         idle_threshold_seconds=IDLE_SECONDS,
         post_media_grace_seconds=POST_MEDIA_GRACE_SECONDS,
     )
@@ -207,10 +278,10 @@ def run_loop() -> int:
     while not stopping:
         now = time.monotonic()
         try:
-            locked = gnome_locked()
-            idle_ms = gnome_idle_ms()
+            locked = session_locked()
+            idle_ms = x11_idle_ms()
         except Exception as exc:
-            renderer.stop("gnome_state_unknown")
+            renderer.stop("desktop_state_unknown")
             _public_log("state_unavailable", reason=str(exc))
             time.sleep(max(POLL_SECONDS, 2.0))
             continue

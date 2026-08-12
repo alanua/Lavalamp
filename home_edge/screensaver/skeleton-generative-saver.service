@@ -1,7 +1,5 @@
 [Unit]
 Description=Skeleton Home Edge generative screensaver controller
-After=graphical-session.target
-PartOf=graphical-session.target
 
 [Service]
 Type=simple
@@ -16,4 +14,4 @@ PrivateTmp=yes
 UMask=0077
 
 [Install]
-WantedBy=graphical-session.target
+WantedBy=default.target
