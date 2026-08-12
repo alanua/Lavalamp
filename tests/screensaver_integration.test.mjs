@@ -58,7 +58,8 @@ test('install and rollback preserve lock/power policy and avoid package mutation
   }
   const install = read('install.sh');
   assert.match(install, /\/usr\/bin\/loginctl/);
-  assert.match(install, /ctypes\.util\.find_library\("Xss"\)/);
+  assert.match(install, /ctypes\.util\.find_library\(name\)/);
+  assert.match(install, /\("Xss", "libXss\.so\.1"\)/);
 });
 
 test('systemd unit starts in normal user manager and cleans its process group', () => {
