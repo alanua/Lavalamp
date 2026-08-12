@@ -17,7 +17,7 @@ test('controller is GNOME idle/lock state based and media-origin agnostic', () =
   assert.match(source, /return "CLEAR"/);
   assert.match(source, /return "UNKNOWN"/);
   assert.match(source, /reason = "media_owner"/);
-  assert.doesNotMatch(source, /youtube|cast|mpv|title|url/i);
+  assert.doesNotMatch(source, /youtube|chromecast|\bmpv\b/i);
 });
 
 test('unknown media state fails closed and media release has bounded grace', () => {

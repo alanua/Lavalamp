@@ -26,17 +26,13 @@ done
 mkdir -p "$STATE" "$UNIT_DIR" "$ENV_DIR" "$BACKUP"
 chmod 700 "$STATE" "$ENV_DIR" "$BACKUP"
 
-# Keep exactly one rollback snapshot of the state that existed before the first apply.
+# Capture exactly one pre-apply rollback point, including service enable/active state.
 if [[ ! -e "$BACKUP/captured" ]]; then
-  if [[ -d "$TARGET" ]]; then
-    cp -a "$TARGET" "$BACKUP/target.previous"
-  fi
-  if [[ -f "$UNIT" ]]; then
-    cp -a "$UNIT" "$BACKUP/unit.previous"
-  fi
-  if [[ -f "$ENV_FILE" ]]; then
-    cp -a "$ENV_FILE" "$BACKUP/env.previous"
-  fi
+  if [[ -d "$TARGET" ]]; then cp -a "$TARGET" "$BACKUP/target.previous"; fi
+  if [[ -f "$UNIT" ]]; then cp -a "$UNIT" "$BACKUP/unit.previous"; fi
+  if [[ -f "$ENV_FILE" ]]; then cp -a "$ENV_FILE" "$BACKUP/env.previous"; fi
+  if /usr/bin/systemctl --user is-enabled --quiet skeleton-generative-saver.service 2>/dev/null; then echo yes > "$BACKUP/unit_was_enabled"; else echo no > "$BACKUP/unit_was_enabled"; fi
+  if /usr/bin/systemctl --user is-active --quiet skeleton-generative-saver.service 2>/dev/null; then echo yes > "$BACKUP/unit_was_active"; else echo no > "$BACKUP/unit_was_active"; fi
   : > "$BACKUP/captured"
 fi
 

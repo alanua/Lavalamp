@@ -53,7 +53,7 @@ if [[ "$ready" -ne 1 ]]; then
   exit 4
 fi
 
-exec "$CHROME" \
+"$CHROME" \
   --kiosk \
   --app="$URL" \
   --user-data-dir="$PROFILE" \
