@@ -1,0 +1,53 @@
+name: validate-screensaver-integration
+
+on:
+  push:
+    branches:
+      - validation/screensaver-integration-8fc6f07
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout validation branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Runtime versions
+        run: |
+          set -euo pipefail
+          python3 --version
+          node --version
+          git rev-parse HEAD
+      - name: Python compile
+        run: |
+          set -euo pipefail
+          python3 -m py_compile home_edge/screensaver/skeleton-generative-saver.py
+      - name: Shell syntax
+        run: |
+          set -euo pipefail
+          bash -n home_edge/screensaver/launch-renderer.sh
+          bash -n home_edge/screensaver/install.sh
+          bash -n home_edge/screensaver/status.sh
+          bash -n home_edge/screensaver/rollback.sh
+      - name: Screensaver integration tests
+        run: |
+          set -euo pipefail
+          node --test tests/screensaver_integration.test.mjs
+      - name: Generative visual regression tests
+        run: |
+          set -euo pipefail
+          node --test tests/generative_visuals.test.mjs
+          node --check home_edge/generative_visuals/app.mjs
+          node --check home_edge/generative_visuals/renderer.mjs
+          node --check home_edge/generative_visuals/scene-bus.mjs
+          node --check home_edge/generative_visuals/scenes.mjs
+      - name: Diff check
+        run: |
+          set -euo pipefail
+          git diff --check 6d90655bf1bd66da53fc4ea582715006f85291cd..8fc6f071ae075e77c3ba7943f1cf2d46e6377054
