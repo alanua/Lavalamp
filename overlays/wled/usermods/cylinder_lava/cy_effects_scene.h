@@ -6,6 +6,7 @@ namespace CylinderLamp {
 
 enum CyEffectKind : uint8_t {
   CY_EFFECT_ANEMONE = 0,
+  CY_EFFECT_TIDAL_BLOOM,
   CY_EFFECT_LAVA_LAMP,
   CY_EFFECT_FLAME,
   CY_EFFECT_PLASMA_CORE,
@@ -92,7 +93,7 @@ static inline float octopusScaleFromUi(uint8_t value) {
 
 static inline FxCoord fxCoordCylinderShell(int x, int y, int W, int H, float theta0, float h0, float scaleX, float scaleY) {
   const float u = (float(x) + 0.5f) / float(W);
-  const float h = H <= 1 ? 0.0f : float(y) / float(H - 1);
+  const float h = H <= 1 ? 0.0f : float(H - 1 - y) / float(H - 1);
   const float theta = CY_TWO_PI * u;
   const float a = cyWrapPi(theta - theta0);
 
@@ -212,6 +213,34 @@ static float cyFieldLavaLamp(const CyCoord& c, float t) {
   return f;
 }
 
+static float cyFieldTidalBloom(const CyCoord& c, float t) {
+  float blooms = 0.0f;
+  for (uint8_t i = 0; i < 4; i++) {
+    const float fi = float(i);
+    const float baseTheta = (CY_TWO_PI * fi * 0.25f) + (0.00023f * t);
+    const float thetaCenter =
+        baseTheta +
+        (0.28f * sinf((0.00031f * t) + (1.7f * fi))) +
+        (0.10f * sinf((5.0f * c.h) + (0.00019f * t) + fi));
+    const float heightCenter =
+        0.20f +
+        (0.60f * cyFract((0.000055f * t) + (0.23f * fi))) +
+        (0.05f * sinf((0.00027f * t) + (2.1f * fi)));
+    const float dtheta = cyWrappedAngle(c.theta - thetaCenter);
+    const float dh = c.h - heightCenter;
+    const float petal =
+        expf(-(dtheta * dtheta) / 0.165f) *
+        expf(-(dh * dh) / 0.018f) *
+        cyGauss(c.r, 0.70f + (0.08f * sinf(fi)), 0.21f);
+    blooms += petal;
+  }
+
+  const float tide = 0.5f + 0.5f * sinf((1.8f * c.theta) - (4.6f * c.h) + (0.00062f * t));
+  const float stem = cyGauss(c.r, 0.55f, 0.30f) * (0.22f + 0.24f * tide);
+  const float bottomFeed = 0.20f * expf(-c.h / 0.20f) * cyGauss(c.r, 0.76f, 0.24f);
+  return (0.95f * blooms) + stem + bottomFeed;
+}
+
 static float cyFieldFlame(const CyCoord& c, float t) {
   const float liquid = 0.006f;
   const float bodyCenter = 0.35f * sinf(0.00055f * t);
@@ -308,6 +337,18 @@ static float cyFieldRingRipple(const CyCoord& c, float t) {
   return wave * rad;
 }
 
+static float cyFieldRingRippleRainbow(const CyCoord& c, float t) {
+  const float p1 = cyFract(0.00018f * t);
+  const float p2 = cyFract(0.37f + (0.00013f * t));
+  const float d1 = fabsf(c.h - p1);
+  const float d2 = fabsf(c.h - p2);
+  const float ringA = cyGauss(d1, 0.0f, 0.055f);
+  const float ringB = cyGauss(d2, 0.0f, 0.080f);
+  const float prism = 0.62f + 0.38f * sinf((7.0f * c.theta) + (1.4f * sinf(6.0f * c.h)) + (0.0008f * t));
+  const float rad = cyGauss(c.r, 0.70f, 0.20f);
+  return (0.72f * ringA + 0.55f * ringB) * prism * rad;
+}
+
 static float cyFieldBottomRays(const CyCoord& c, float t) {
   const float rays = 0.5f + 0.5f * cosf((8.0f * c.theta) - (0.0009f * t));
   const float root = expf(-c.h / 0.24f);
@@ -354,6 +395,7 @@ static float cyFieldCrossBandsTube(const CyCoord& c, float t) {
 static float cyField(CyEffectKind kind, const CyCoord& c, float t) {
   switch (kind) {
     case CY_EFFECT_ANEMONE: return 0.0f;
+    case CY_EFFECT_TIDAL_BLOOM: return cyFieldTidalBloom(c, t);
     case CY_EFFECT_LAVA_LAMP: return cyFieldLavaLamp(c, t);
     case CY_EFFECT_FLAME: return cyFieldFlame(c, t);
     case CY_EFFECT_PLASMA_CORE: return cyFieldPlasmaCore(c, t);
@@ -361,8 +403,8 @@ static float cyField(CyEffectKind kind, const CyCoord& c, float t) {
     case CY_EFFECT_AURORA_TUBE: return cyFieldAuroraTube(c, t);
     case CY_EFFECT_INNER_SWIRL: return cyFieldInnerSwirl(c, t);
     case CY_EFFECT_BUBBLES_VOLUME: return cyFieldBubblesVolume(c, t);
-    case CY_EFFECT_RING_RIPPLES:
-    case CY_EFFECT_RING_RIPPLES_RAINBOW: return cyFieldRingRipple(c, t);
+    case CY_EFFECT_RING_RIPPLES: return cyFieldRingRipple(c, t);
+    case CY_EFFECT_RING_RIPPLES_RAINBOW: return cyFieldRingRippleRainbow(c, t);
     case CY_EFFECT_BOTTOM_RAYS: return cyFieldBottomRays(c, t);
     case CY_EFFECT_RISING_BANDS: return cyFieldRisingBands(c, t);
     case CY_EFFECT_HELICAL_PLASMA: return cyFieldHelicalPlasma(c, t);
@@ -406,6 +448,13 @@ static CRGB cyColor(CyEffectKind kind, float energy, float theta, float t) {
         CRGB(0, 0, 0),
         CRGB(95, 16, 180),
         CRGB(100, 245, 255)
+      );
+    case CY_EFFECT_TIDAL_BLOOM:
+      return cyBlend3(
+        h,
+        CRGB(0, 8, 26),
+        CRGB(16, 150, 170),
+        CRGB(255, 120, 210)
       );
     case CY_EFFECT_LAVA_LAMP:
       return cyBlend3(
@@ -488,6 +537,7 @@ static void renderCyAnemone(RenderState&, const Surface& surface, uint16_t) {
   static const SceneDefinition NAME##_SCENE = { build##NAME, cyExactPipelineSettings, output##NAME }; \
   static void render##NAME(RenderState& state, const Surface& surface, uint16_t dt) { renderScene(state, surface, dt, NAME##_SCENE); }
 
+CY_DEFINE_SCENE(CyTidalBloom, CY_EFFECT_TIDAL_BLOOM)
 CY_DEFINE_SCENE(CyLavaLamp, CY_EFFECT_LAVA_LAMP)
 CY_DEFINE_SCENE(CyFlame, CY_EFFECT_FLAME)
 CY_DEFINE_SCENE(CyPlasmaCore, CY_EFFECT_PLASMA_CORE)

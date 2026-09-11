@@ -6,30 +6,9 @@
 
 typedef void (*CylinderRenderFn)(CylinderLamp::RenderState& state, const CylinderLamp::Surface& surface, uint16_t dt);
 
-static constexpr uint8_t SCENE_ID_CY_TIDAL_BLOOM = 17;
-
-struct TidalBloomState {
-  uint32_t rng = 0;
-  uint32_t nextTargetMs = 0;
-  float thetaOffset = 0.0f;
-  float thetaTarget = 0.0f;
-  float heightOffset = 0.0f;
-  float heightTarget = 0.0f;
-  float scaleX = 1.0f;
-  float scaleXTarget = 1.0f;
-  float scaleY = 1.0f;
-  float scaleYTarget = 1.0f;
-  float phaseOffset = 0.0f;
-  float phaseTarget = 0.0f;
-  uint8_t initialized = 0;
-};
-
 struct CylinderRuntimeState {
   CylinderLamp::RenderState render;
-  TidalBloomState tidalBloom;
 };
-
-static TidalBloomState* activeTidalBloomState = nullptr;
 
 static uint16_t render_cylinder_scene(uint8_t sceneId, CylinderRenderFn renderFn);
 static uint16_t mode_cy_anemone();
@@ -101,95 +80,6 @@ static const char _data_FX_MODE_CY_CELL_MEMBRANE_FLOW[] PROGMEM =
 static const char _data_FX_MODE_CY_CROSS_BANDS_TUBE[] PROGMEM =
   "CY Cross Bands Tube@Flow,Scale,Energy,Stability,Softness;Depth,Band,Accent;!;02;m12=0,sx=104,ix=128,c1=180,c2=132,c3=96";
 
-static inline uint32_t tidalBloomRandom(TidalBloomState& state) {
-  uint32_t x = state.rng;
-  if (x == 0) x = 0xA3C59AC3u;
-  x ^= x << 13;
-  x ^= x >> 17;
-  x ^= x << 5;
-  state.rng = x;
-  return x;
-}
-
-static inline float tidalBloomUnitRandom(TidalBloomState& state) {
-  return float(tidalBloomRandom(state) & 0x00FFFFFFu) / 16777215.0f;
-}
-
-static inline float tidalBloomRandomRange(TidalBloomState& state, float low, float high) {
-  return low + ((high - low) * tidalBloomUnitRandom(state));
-}
-
-static inline float tidalBloomApproach(float current, float target, float amount) {
-  if (amount < 0.0f) amount = 0.0f;
-  if (amount > 1.0f) amount = 1.0f;
-  return current + ((target - current) * amount);
-}
-
-static void resetTidalBloomState(TidalBloomState& state) {
-  state.rng = uint32_t(micros()) ^ (strip.now * 0x9E3779B9u) ^ 0xA3C59AC3u;
-  if (state.rng == 0) state.rng = 0xA3C59AC3u;
-  state.nextTargetMs = strip.now + 1200U;
-  state.thetaOffset = 0.0f;
-  state.thetaTarget = 0.0f;
-  state.heightOffset = 0.0f;
-  state.heightTarget = 0.0f;
-  state.scaleX = 1.0f;
-  state.scaleXTarget = 1.0f;
-  state.scaleY = 1.0f;
-  state.scaleYTarget = 1.0f;
-  state.phaseOffset = 0.0f;
-  state.phaseTarget = 0.0f;
-  state.initialized = 1;
-}
-
-static void updateTidalBloomState(TidalBloomState& state, uint16_t dt) {
-  if (!state.initialized) resetTidalBloomState(state);
-
-  const uint32_t now = strip.now;
-  if (int32_t(now - state.nextTargetMs) >= 0) {
-    const float variation = 0.30f + (float(SEGMENT.custom2) / 255.0f) * 0.70f;
-    state.thetaTarget = tidalBloomRandomRange(state, -0.42f, 0.42f) * variation;
-    state.heightTarget = tidalBloomRandomRange(state, -0.055f, 0.075f) * variation;
-    state.scaleXTarget = 1.0f + tidalBloomRandomRange(state, -0.12f, 0.12f) * variation;
-    state.scaleYTarget = 1.0f + tidalBloomRandomRange(state, -0.10f, 0.10f) * variation;
-    state.phaseTarget = tidalBloomRandomRange(state, -34.0f, 34.0f) * variation;
-    state.nextTargetMs = now + 3500U + (tidalBloomRandom(state) % 7501U);
-  }
-
-  const float responseMs = 1800.0f + (float(SEGMENT.custom2) / 255.0f) * 2400.0f;
-  const float amount = responseMs > 0.0f ? float(dt) / responseMs : 1.0f;
-  state.thetaOffset = tidalBloomApproach(state.thetaOffset, state.thetaTarget, amount);
-  state.heightOffset = tidalBloomApproach(state.heightOffset, state.heightTarget, amount);
-  state.scaleX = tidalBloomApproach(state.scaleX, state.scaleXTarget, amount);
-  state.scaleY = tidalBloomApproach(state.scaleY, state.scaleYTarget, amount);
-  state.phaseOffset = tidalBloomApproach(state.phaseOffset, state.phaseTarget, amount);
-}
-
-static void renderCyTidalBloom(CylinderLamp::RenderState&, const CylinderLamp::Surface& surface, uint16_t dt) {
-  if (activeTidalBloomState == nullptr) {
-    SEGMENT.fill(SEGCOLOR(0));
-    return;
-  }
-  TidalBloomState& bloom = *activeTidalBloomState;
-  updateTidalBloomState(bloom, dt);
-
-  const int W = int(surface.width);
-  const int H = int(surface.height);
-  const uint16_t step = uint16_t(int32_t(CylinderLamp::octopusStep(float(strip.now))) + int32_t(bloom.phaseOffset));
-  const float scaleX = CylinderLamp::octopusScaleFromUi(SEGMENT.intensity) * bloom.scaleX;
-  const float scaleY = CylinderLamp::octopusScaleFromUi(SEGMENT.custom1) * bloom.scaleY;
-  const float heightOrigin = 0.14f + bloom.heightOffset;
-
-  for (uint8_t x = 0; x < surface.width; x++) {
-    for (uint8_t y = 0; y < surface.height; y++) {
-      const CylinderLamp::FxCoord coord =
-        CylinderLamp::fxCoordCylinderShell(x, y, W, H, bloom.thetaOffset, heightOrigin, scaleX, scaleY);
-      const CylinderLamp::OctopusSample sample = CylinderLamp::octopusSampleFromCoord(coord, W, H);
-      SEGMENT.setPixelColorXY(x, y, CylinderLamp::octopusKernel(sample, step, SEGMENT.custom3));
-    }
-  }
-}
-
 static uint16_t render_cylinder_scene(uint8_t sceneId, CylinderRenderFn renderFn) {
   if (!SEGENV.allocateData(sizeof(CylinderRuntimeState))) {
     SEGMENT.fill(SEGCOLOR(0));
@@ -209,16 +99,10 @@ static uint16_t render_cylinder_scene(uint8_t sceneId, CylinderRenderFn renderFn
   return FRAMETIME;
 #endif
 
-  const bool sceneChanged = state->sceneId != sceneId;
   CylinderLamp::selectScene(*state, sceneId);
-  if (sceneChanged && sceneId == SCENE_ID_CY_TIDAL_BLOOM) {
-    resetTidalBloomState(runtime->tidalBloom);
-  }
 
   const uint16_t dt = CylinderLamp::elapsedMs(*state);
-  activeTidalBloomState = sceneId == SCENE_ID_CY_TIDAL_BLOOM ? &runtime->tidalBloom : nullptr;
   renderFn(*state, surface, dt);
-  activeTidalBloomState = nullptr;
   return FRAMETIME;
 }
 
@@ -227,7 +111,7 @@ static uint16_t mode_cy_anemone() {
 }
 
 static uint16_t mode_cy_tidal_bloom() {
-  return render_cylinder_scene(SCENE_ID_CY_TIDAL_BLOOM, renderCyTidalBloom);
+  return render_cylinder_scene(CylinderLamp::SCENE_ID_TIDAL_BLOOM, CylinderLamp::renderCyTidalBloom);
 }
 
 static uint16_t mode_cy_lava_lamp() {
