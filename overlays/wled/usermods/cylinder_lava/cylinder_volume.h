@@ -59,8 +59,8 @@ static inline float cyDepthWeight(uint8_t sample) {
 
 static inline CyCoord cyCoord(uint8_t x, uint8_t y, uint8_t sample, const Surface& surface) {
   CyCoord coord;
-  coord.theta = CY_TWO_PI * (float(x) / float(surface.width));
-  coord.h = surface.height <= 1 ? 0.0f : float(y) / float(surface.height - 1);
+  coord.theta = CY_TWO_PI * ((float(x) + 0.5f) / float(surface.width));
+  coord.h = surface.height <= 1 ? 0.0f : float(surface.height - 1 - y) / float(surface.height - 1);
   coord.r = 1.0f - cyDepth(sample);
   return coord;
 }
