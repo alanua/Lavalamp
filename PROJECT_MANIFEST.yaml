@@ -9,3 +9,8 @@ hardware:
   diffuser: internal_LED_TV_screen_or_backlight_diffuser_film
   primary_controller: ESP32
   secondary_controller: ESP8266_where_practical
+public_surface:
+  relationship_to_skeleton: external_control_and_audit_plane
+  source_verification_is_not_physical_deployment: true
+  license_status: not_selected
+  live_device_mutation_from_repo_ci: forbidden

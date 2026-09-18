@@ -1,8 +1,10 @@
 # Lavalamp
 
-Cylinder lamp firmware work for a premium atmospheric lamp based on WLED.
+Lavalamp is the public firmware and visual-effects companion for a physical 16x16 cylindrical ESP32 lamp built on WLED.
 
-This repository does not replace WLED. It fetches official WLED `v0.15.3` and overlays a small WLED usermod that registers custom product effects for the cylinder lamp.
+The repository does not replace WLED. It pins official WLED `v0.15.3`, applies a small cylinder-specific overlay/usermod, and keeps source-side validation separate from live-device deployment. Skeleton/Home Edge may control and verify a physical lamp, but this repository itself contains the reusable public source and test surface.
+
+Repository maturity: active experimental hardware/firmware work. Public `main` must not be assumed identical to a deployed device image, and open draft firmware PRs are not part of `main` until merged. No open-source license has been selected for this repository yet.
 
 ## Current Scope
 
