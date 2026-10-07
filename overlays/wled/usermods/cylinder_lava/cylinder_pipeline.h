@@ -40,7 +40,7 @@ static inline CRGB blendRgb(const CRGB& a, const CRGB& b, uint8_t amountOfB) {
 }
 
 static inline CRGB colorOr(uint8_t slot, const CRGB& fallback) {
-  CRGB color = CRGB(SEGCOLOR(slot));
+  CRGB color = Native2DCylinderAdapter::color(slot);
   if (color.r == 0 && color.g == 0 && color.b == 0) return fallback;
   return color;
 }

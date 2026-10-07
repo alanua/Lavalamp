@@ -2,7 +2,7 @@
 
 Cylinder lamp firmware work for a premium atmospheric lamp based on WLED.
 
-This repository does not replace WLED. It fetches official WLED `v0.15.3` and overlays a small WLED usermod that registers custom product effects for the cylinder lamp.
+This repository does not replace WLED. It fetches official WLED `v16.0.0` and overlays a small WLED usermod that registers custom product effects for the cylinder lamp.
 
 ## Current Scope
 
@@ -10,7 +10,7 @@ Implemented:
 
 - Cylinder mapping layer
 - Fixed render buffers
-- WLED-native custom effects: `Lava Lamp`, `Flame`
+- WLED 16-native custom effects: 17 `CY ...` cylinder effects
 
 Not implemented in this branch:
 
@@ -33,6 +33,7 @@ The overlay adds a usermod to WLED and registers the effect with WLED's native `
 
 Files applied inside WLED:
 
+- `usermods/cylinder_lava/native_2d_cylinder_adapter.h`
 - `usermods/cylinder_lava/cylinder_debug.h`
 - `usermods/cylinder_lava/cylinder_geometry.h`
 - `usermods/cylinder_lava/cylinder_motion.h`
@@ -43,13 +44,15 @@ Files applied inside WLED:
 - `usermods/cylinder_lava/lava_scene.h`
 - `usermods/cylinder_lava/usermod_cylinder_lava.h`
 - `platformio_override.ini`
-- `wled00/usermods_list.cpp` registration hook only
+- WLED 16 `custom_usermods` registration through `platformio_override.ini`
+- A generated `usermods/cylinder_lava/library.json` manifest during preparation
+- A generated `usermods/cylinder_lava/cylinder_lava.cpp` include shim during preparation
 
-WLED core systems for OTA, UI, network, and presets are not rewritten, but a minimal integration patch is applied to WLED's usermod registration list.
+WLED core systems for OTA, UI, network, and presets are not rewritten. The WLED 16 path does not patch WLED core files.
 
 ## Versioning / Integration Risk
 
-This integration is pinned to WLED `v0.15.3`. The patch targets the `wled00/usermods_list.cpp` layout in that release, so updating WLED may require refreshing the patch before building.
+This integration is pinned to WLED `v16.0.0`. The WLED 16 path uses `custom_usermods` and the `REGISTER_USERMOD()` self-registration macro. The legacy `wled00/usermods_list.cpp` patch remains only for pre-16 compatibility.
 
 ## Render Model
 

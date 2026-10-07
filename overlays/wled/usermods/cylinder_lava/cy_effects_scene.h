@@ -305,7 +305,7 @@ static float cyField(CyEffectKind kind, const CyCoord& c, float t) {
 
 static void buildCyField(SceneContext& context, CyEffectKind kind) {
   advanceMotion(context.motion, context.dt, MotionRates());
-  const float t = float(strip.now);
+  const float t = float(Native2DCylinderAdapter::now());
   const uint8_t depthSamples = cyRuntimeDepthSamples(kind);
   float totalWeight = 0.0f;
   for (uint8_t sample = 0; sample < depthSamples; sample++) {
@@ -369,7 +369,7 @@ static CRGB cyColor(CyEffectKind kind, float energy, float theta, float hCoord, 
 }
 
 static void outputCyField(SceneContext& context, CyEffectKind kind) {
-  const float t = float(strip.now);
+  const float t = float(Native2DCylinderAdapter::now());
   for (uint8_t y = 0; y < context.surface.height; y++) {
     for (uint8_t x = 0; x < context.surface.width; x++) {
       const uint8_t scalar = context.field.blurred[indexOf(x, y, context.surface)];
@@ -384,7 +384,7 @@ static void outputCyField(SceneContext& context, CyEffectKind kind) {
           opticalScalar == 0 ? CRGB::Black : cyColor(kind, energy, theta, hCoord, t);
       color.nscale8_video(qadd8(4, scale8(opticalScalar, 236)));
       cyLimit(color);
-      SEGMENT.setPixelColorXY(x, y, color);
+      Native2DCylinderAdapter::setPixel(x, y, color);
     }
   }
 }
