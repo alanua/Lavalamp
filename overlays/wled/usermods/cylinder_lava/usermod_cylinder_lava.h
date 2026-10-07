@@ -69,7 +69,7 @@ static const char _data_FX_MODE_CY_COMET_TRAILS[] PROGMEM =
 
 static uint16_t render_cylinder_scene(uint8_t sceneId, CylinderRenderFn renderFn) {
   if (!SEGENV.allocateData(sizeof(CylinderRuntimeState))) {
-    SEGMENT.fill(SEGCOLOR(0));
+    CylinderLamp::Native2DCylinderAdapter::fill(CylinderLamp::Native2DCylinderAdapter::color(0));
     return FRAMETIME;
   }
 
@@ -77,7 +77,7 @@ static uint16_t render_cylinder_scene(uint8_t sceneId, CylinderRenderFn renderFn
   CylinderLamp::RenderState* state = &runtime->render;
   CylinderLamp::Surface surface;
   if (!CylinderLamp::prepare(*state, surface)) {
-    SEGMENT.fill(SEGCOLOR(0));
+    CylinderLamp::Native2DCylinderAdapter::fill(CylinderLamp::Native2DCylinderAdapter::color(0));
     return 350;
   }
 
@@ -146,3 +146,8 @@ public:
   void loop() override {
   }
 };
+
+#ifdef REGISTER_USERMOD
+static CylinderLavaUsermod cylinder_lava_usermod;
+REGISTER_USERMOD(cylinder_lava_usermod);
+#endif

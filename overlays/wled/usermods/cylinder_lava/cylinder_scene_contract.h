@@ -82,10 +82,10 @@ static inline SceneControls readControls() {
 }
 
 static bool prepare(RenderState& state, Surface& surface) {
-  if (!strip.isMatrix || !SEGMENT.is2D()) return false;
+  if (!Native2DCylinderAdapter::available()) return false;
 
-  const uint16_t width = SEGMENT.virtualWidth();
-  const uint16_t height = SEGMENT.virtualHeight();
+  const uint16_t width = Native2DCylinderAdapter::width();
+  const uint16_t height = Native2DCylinderAdapter::height();
   const uint32_t count = uint32_t(width) * height;
   if (width < 2 || height < 2 || count == 0 || count > CYLINDER_LAVA_MAX_PIXELS) return false;
 
@@ -98,7 +98,7 @@ static bool prepare(RenderState& state, Surface& surface) {
     resetMotion(state.motion);
     state.width = width;
     state.height = height;
-    state.lastMs = strip.now;
+    state.lastMs = Native2DCylinderAdapter::now();
     state.initialized = 1;
     state.sceneId = 0;
   }
@@ -110,12 +110,12 @@ static inline void selectScene(RenderState& state, uint8_t sceneId) {
   if (state.sceneId == sceneId) return;
   clearFields(state.field);
   resetMotion(state.motion);
-  state.lastMs = strip.now;
+  state.lastMs = Native2DCylinderAdapter::now();
   state.sceneId = sceneId;
 }
 
 static uint16_t elapsedMs(RenderState& state) {
-  const uint32_t now = strip.now;
+  const uint32_t now = Native2DCylinderAdapter::now();
   uint32_t dt = now - state.lastMs;
   state.lastMs = now;
   if (dt > 96) dt = 96;

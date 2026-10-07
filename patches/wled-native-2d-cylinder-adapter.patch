@@ -1,0 +1,45 @@
+diff --git a/platformio_override.ini b/platformio_override.ini
+new file mode 100644
+--- /dev/null
++++ b/platformio_override.ini
+@@ -0,0 +1,22 @@
++[platformio]
++default_envs = cylinder_lava_esp32
++
++[env:cylinder_lava_esp32]
++board = esp32dev
++platform = ${esp32.platform}
++platform_packages = ${esp32.platform_packages}
++build_unflags = ${common.build_unflags}
++build_flags =
++  ${common.build_flags}
++  ${esp32.build_flags}
++  -D WLED_RELEASE_NAME=\"CYLINDER_LAVA_STAGE1\"
++  -D USERMOD_CYLINDER_LAVA
++  -D PIXEL_COUNTS=256
++  -D DATA_PINS=2
++  -D LED_TYPES=TYPE_WS2812_RGB
++  -D DEFAULT_LED_COLOR_ORDER=COL_ORDER_GRB
++custom_usermods =
++  cylinder_lava
++lib_deps = ${esp32.lib_deps}
++monitor_filters = esp32_exception_decoder
++board_build.partitions = ${esp32.default_partitions}
+diff --git a/usermods/cylinder_lava/library.json b/usermods/cylinder_lava/library.json
+new file mode 100644
+--- /dev/null
++++ b/usermods/cylinder_lava/library.json
+@@ -0,0 +1,7 @@
++{
++  "name": "cylinder_lava",
++  "version": "1.0.0",
++  "build": {
++    "libArchive": false
++  }
++}
+diff --git a/usermods/cylinder_lava/cylinder_lava.cpp b/usermods/cylinder_lava/cylinder_lava.cpp
+new file mode 100644
+--- /dev/null
++++ b/usermods/cylinder_lava/cylinder_lava.cpp
+@@ -0,0 +1 @@
++#include "usermod_cylinder_lava.h"

@@ -28,7 +28,7 @@ static inline uint8_t lavaLobeFalloff(uint8_t x, uint8_t y, const Surface& surfa
 }
 
 static inline CRGB lavaColorOr(uint8_t slot, const CRGB& fallback, uint16_t maxTotal, uint8_t maxGreen, uint8_t maxBlue, bool rejectBright) {
-  CRGB color = CRGB(SEGCOLOR(slot));
+  CRGB color = Native2DCylinderAdapter::color(slot);
   uint16_t total = uint16_t(color.r) + color.g + color.b;
   if (total <= 4 || (rejectBright && total > maxTotal)) return fallback;
 
@@ -126,7 +126,7 @@ static void outputLava(SceneContext& context) {
       CRGB color = lavaPalette(ease8InOutApprox(depthScalar), deep, glow, core);
       color.nscale8_video(qadd8(12, scale8(depthScalar, 198)));
       limitLavaColor(color);
-      SEGMENT.setPixelColorXY(x, y, color);
+      Native2DCylinderAdapter::setPixel(x, y, color);
     }
   }
 }

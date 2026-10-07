@@ -1,7 +1,6 @@
 #pragma once
 
-#include "wled.h"
-#include "FX.h"
+#include "native_2d_cylinder_adapter.h"
 
 namespace CylinderLamp {
 

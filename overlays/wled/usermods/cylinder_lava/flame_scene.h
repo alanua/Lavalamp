@@ -29,7 +29,7 @@ static inline uint8_t flameTongue(uint8_t angle, uint8_t center, uint8_t width) 
 }
 
 static inline CRGB flameColorOr(uint8_t slot, const CRGB& fallback, uint16_t maxTotal, uint8_t maxGreen, uint8_t maxBlue) {
-  CRGB color = CRGB(SEGCOLOR(slot));
+  CRGB color = Native2DCylinderAdapter::color(slot);
   uint16_t total = uint16_t(color.r) + color.g + color.b;
   if (total <= 4 || total > maxTotal) return fallback;
 
@@ -179,7 +179,7 @@ static void outputFlame(SceneContext& context) {
       CRGB color = flamePalette(ease8InOutApprox(safeScalar), ember, body, core);
       color.nscale8_video(qadd8(10, scale8(safeScalar, 214)));
       limitFlameColor(color);
-      SEGMENT.setPixelColorXY(x, y, color);
+      Native2DCylinderAdapter::setPixel(x, y, color);
     }
   }
 }
