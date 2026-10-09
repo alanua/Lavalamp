@@ -39,12 +39,24 @@ test('media release has bounded grace instead of immediate saver relaunch', () =
 test('renderer is local-only X11 kiosk and duplicate-safe', () => {
   const source = read('launch-renderer.sh');
   assert.match(source, /http:\/\/127\.0\.0\.1:/);
+  assert.match(source, /urllib\.request\.urlopen\(f'http:\/\/127\.0\.0\.1:\{port\}/);
   assert.match(source, /--bind 127\.0\.0\.1/);
   assert.match(source, /--kiosk/);
   assert.match(source, /--ozone-platform=x11/);
   assert.match(source, /DISPLAY="\$\{DISPLAY:-:0\}"/);
   assert.match(source, /flock -n/);
+  assert.match(source, /duplicate_renderer_rejected/);
   assert.doesNotMatch(source, /https:\/\//);
+  assert.doesNotMatch(source, /0\.0\.0\.0|\[::\]|localhost/);
+});
+
+test('controller starts at most one renderer and backs off duplicate churn', () => {
+  const source = read('skeleton-generative-saver.py');
+  assert.match(source, /def start\(self\) -> bool:\s+if self\.running:\s+return False/s);
+  assert.match(source, /elif not renderer\.running:\s+try:\s+renderer\.start\(\)/s);
+  assert.match(source, /renderer\.process\.poll\(\) is not None:[\s\S]*?retry_after = now \+ RESTART_BACKOFF_SECONDS/);
+  assert.match(source, /elif now < retry_after:\s+reason = "restart_backoff"/);
+  assert.doesNotMatch(source, /while not stopping:[\s\S]{0,1500}renderer\.start\(\)[\s\S]{0,300}renderer\.start\(\)/);
 });
 
 test('install and rollback preserve lock/power policy and avoid package mutation', () => {
@@ -60,6 +72,15 @@ test('install and rollback preserve lock/power policy and avoid package mutation
   assert.match(install, /\/usr\/bin\/loginctl/);
   assert.match(install, /ctypes\.util\.find_library\(name\)/);
   assert.match(install, /\("Xss", "libXss\.so\.1"\)/);
+});
+
+test('status path preserves lock and media ownership as observed state only', () => {
+  const source = read('skeleton-generative-saver.py');
+  assert.match(source, /"media_ownership": media_ownership\(\)/);
+  assert.match(source, /result\["locked"\] = session_locked\(\)/);
+  assert.match(source, /logind_lock_available/);
+  assert.doesNotMatch(source, /LockSession|UnlockSession|SetLockedHint/);
+  assert.doesNotMatch(source, /media_ownership\(\)[\s\S]{0,400}(?:kill|terminate|stop)\(/);
 });
 
 test('systemd unit starts in normal user manager and cleans its process group', () => {
