@@ -8,6 +8,7 @@ import { makeSceneFrame, validateSceneFrame } from '../home_edge/generative_visu
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
+const readRoot = (...parts) => fs.readFileSync(path.join(root, ...parts), 'utf8');
 
 test('all thirteen required scenes are unique and selectable', () => {
   const required = ['infinite_layers','organic_sheet','topo_flow','porous_sculpture','reaction_diffusion','metaball_tunnel','prism_bloom','spectral_flame','accretion_horizon','particle_veil','chromatic_glass','volumetric_loom','field_lines'];
@@ -107,9 +108,128 @@ test('GLSL smoothstep calls with literal edges are ordered', () => {
 });
 
 test('expensive shader scenes reduce iteration counts with uComplexity', () => {
-  const source = fs.readFileSync(path.join(root, 'home_edge', 'generative_visuals', 'renderer.mjs'), 'utf8');
+  const source = readRoot('home_edge', 'generative_visuals', 'renderer.mjs');
   assert.match(source, /float quality01\(\)/);
   assert.match(source, /metaballTunnel[\s\S]*?limit=3\.\+floor\(3\.\*quality01\(\)/);
   assert.match(source, /particleVeil[\s\S]*?layerLimit=1\.\+floor\(2\.\*quality01\(\)/);
   assert.match(source, /chromaticGlass[\s\S]*?glassLimit=3\.\+floor\(2\.\*quality01\(\)/);
+});
+
+test('cylinder geometry wraps the horizontal seam and clamps vertical sampling', () => {
+  const source = readRoot('overlays', 'wled', 'usermods', 'cylinder_lava', 'cylinder_geometry.h');
+  assert.match(source, /static inline uint8_t wrapX\(int16_t x, uint8_t width\)/);
+  assert.match(source, /while \(x < 0\) x \+= width;/);
+  assert.match(source, /while \(x >= width\) x -= width;/);
+  assert.match(source, /sampleWrapped[\s\S]*indexOf\(wrapX\(x, surface\.width\), clampY\(y, surface\.height\), surface\)/);
+
+  const surface = { width: 8, height: 4 };
+  const field = Array.from({ length: surface.width * surface.height }, (_, index) => {
+    const x = index % surface.width;
+    const y = Math.floor(index / surface.width);
+    return y * 10 + x;
+  });
+  const indexOf = (x, y) => y * surface.width + x;
+  const wrapX = (x) => {
+    while (x < 0) x += surface.width;
+    while (x >= surface.width) x -= surface.width;
+    return x;
+  };
+  const clampY = (y) => Math.max(0, Math.min(surface.height - 1, y));
+  const sampleWrapped = (x, y) => field[indexOf(wrapX(x), clampY(y))];
+
+  assert.equal(sampleWrapped(-1, 1), field[indexOf(7, 1)]);
+  assert.equal(sampleWrapped(8, 1), field[indexOf(0, 1)]);
+  assert.equal(sampleWrapped(17, -2), field[indexOf(1, 0)]);
+  assert.equal(sampleWrapped(-10, 99), field[indexOf(6, 3)]);
+});
+
+test('cylinder y orientation is top-high and bottom-low for height-from-bottom math', () => {
+  const geometry = readRoot('overlays', 'wled', 'usermods', 'cylinder_lava', 'cylinder_geometry.h');
+  const lava = readRoot('overlays', 'wled', 'usermods', 'cylinder_lava', 'lava_scene.h');
+  const flame = readRoot('overlays', 'wled', 'usermods', 'cylinder_lava', 'flame_scene.h');
+  assert.match(geometry, /heightFromBottom8[\s\S]*height - 1 - y/);
+  assert.match(lava, /const uint8_t h = heightFromBottom8\(y, context\.surface\.height\);[\s\S]*255 - h/);
+  assert.match(flame, /const uint8_t h = heightFromBottom8\(y, context\.surface\.height\);[\s\S]*255 - h/);
+
+  const heightFromBottom8 = (y, height) => {
+    if (height <= 1) return 0;
+    return Math.floor((((height - 1 - y) * 255) + Math.floor((height - 1) / 2)) / (height - 1));
+  };
+  const height = 9;
+  const values = Array.from({ length: height }, (_, y) => heightFromBottom8(y, height));
+
+  assert.equal(values[0], 255);
+  assert.equal(values[height - 1], 0);
+  assert.equal(values[4], 128);
+  for (let y = 1; y < values.length; y++) {
+    assert.ok(values[y] < values[y - 1], `height-from-bottom must descend as y increases: ${values}`);
+  }
+});
+
+test('radial falloff measures shortest cylindrical distance across the wrap seam', () => {
+  const source = readRoot('overlays', 'wled', 'usermods', 'cylinder_lava', 'cylinder_geometry.h');
+  assert.match(source, /shortestXDeltaQ8\(xToQ8\(x\), centerX, surface\)/);
+  assert.match(source, /if \(dx > int32_t\(circumference \/ 2U\)\) dx -= circumference;/);
+  assert.match(source, /if \(dx < -int32_t\(circumference \/ 2U\)\) dx \+= circumference;/);
+
+  const surface = { width: 16 };
+  const xToQ8 = (x) => (x << 8) + 128;
+  const shortestXDeltaQ8 = (a, b) => {
+    const circumference = surface.width << 8;
+    let dx = a - b;
+    if (dx > circumference / 2) dx -= circumference;
+    if (dx < -circumference / 2) dx += circumference;
+    return dx;
+  };
+  const center = xToQ8(0);
+
+  assert.equal(Math.abs(shortestXDeltaQ8(xToQ8(15), center)), 256);
+  assert.equal(Math.abs(shortestXDeltaQ8(xToQ8(1), center)), 256);
+  assert.equal(Math.abs(shortestXDeltaQ8(xToQ8(8), center)), 2048);
+  assert.ok(Math.abs(shortestXDeltaQ8(xToQ8(15), center)) < Math.abs(shortestXDeltaQ8(xToQ8(8), center)));
+});
+
+test('radial cylinder coordinates map x onto a periodic theta plane', () => {
+  const source = readRoot('overlays', 'wled', 'usermods', 'cylinder_lava', 'cylinder_volume.h');
+  assert.match(source, /coord\.theta = CY_TWO_PI \* \(float\(x\) \/ float\(surface\.width\)\)/);
+  assert.match(source, /coord\.h = surface\.height <= 1 \? 0\.0f : float\(y\) \/ float\(surface\.height - 1\)/);
+  assert.match(source, /cyCylinderNoise[\s\S]*cosf\(theta\) \* r \* sx[\s\S]*sinf\(theta\) \* r \* sz/);
+
+  const width = 12;
+  const height = 5;
+  const twoPi = Math.PI * 2;
+  const cyCoord = (x, y, sample) => ({
+    theta: twoPi * (x / width),
+    h: height <= 1 ? 0 : y / (height - 1),
+    r: 1 - sample / 3,
+  });
+  const radialPlane = ({ theta, h, r }, sx = 2, sy = 4, sz = 2) => ({
+    x: Math.cos(theta) * r * sx,
+    y: h * sy,
+    z: Math.sin(theta) * r * sz,
+  });
+
+  assert.equal(cyCoord(0, 0, 0).h, 0);
+  assert.equal(cyCoord(0, height - 1, 0).h, 1);
+  const seamStart = radialPlane(cyCoord(0, 2, 0));
+  const seamEnd = radialPlane({ ...cyCoord(width, 2, 0), theta: twoPi });
+  assert.ok(Math.abs(seamStart.x - seamEnd.x) < 1e-12);
+  assert.ok(Math.abs(seamStart.y - seamEnd.y) < 1e-12);
+  assert.ok(Math.abs(seamStart.z - seamEnd.z) < 1e-12);
+});
+
+test('renderer and app avoid random palette shifts or strobe in the frame path', () => {
+  const renderer = readRoot('home_edge', 'generative_visuals', 'renderer.mjs');
+  const app = readRoot('home_edge', 'generative_visuals', 'app.mjs');
+  const frameBody = app.match(/function frame\(now\) \{[\s\S]*?\n\}/)?.[0] || '';
+  const emitBusBody = app.match(/function emitBus\(\) \{[^\n]*\}/)?.[0] || '';
+
+  assert.doesNotMatch(renderer, /Math\.random|crypto\.getRandomValues/);
+  assert.doesNotMatch(frameBody, /Math\.random|crypto\.getRandomValues/);
+  assert.doesNotMatch(emitBusBody, /Math\.random|crypto\.getRandomValues/);
+  assert.match(app, /renderer\.setPalette\(blendPalettes\(paletteFor\(sceneA\), paletteFor\(sceneB\), currentBlend\)\)/);
+  assert.match(app, /document\.querySelector\('#randomize'\)\.addEventListener\('click',\(\)=>\{settings\.seed=normalizeSeed\(crypto\.getRandomValues/);
+  assert.match(renderer, /vec3 pal\(float x\)[\s\S]*mix\(uPalette0,uPalette1[\s\S]*mix\(uPalette3,uPalette4/);
+  assert.match(renderer, /render\(timeSeconds\)[\s\S]*for\(let i=0;i<5;i\+\+\)[\s\S]*gl\.uniform3f\(l\['uPalette'\+i\],c\[0\],c\[1\],c\[2\]\)/);
+  assert.doesNotMatch(renderer, /\bstrobe\b|flash\s*\(|blink\s*\(/i);
 });
