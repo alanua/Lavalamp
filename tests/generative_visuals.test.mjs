@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs';
+import os from 'node:os';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SCENES, blendSceneStates, deterministicSceneState } from '../home_edge/generative_visuals/scenes.mjs';
@@ -232,4 +234,79 @@ test('renderer and app avoid random palette shifts or strobe in the frame path',
   assert.match(renderer, /vec3 pal\(float x\)[\s\S]*mix\(uPalette0,uPalette1[\s\S]*mix\(uPalette3,uPalette4/);
   assert.match(renderer, /render\(timeSeconds\)[\s\S]*for\(let i=0;i<5;i\+\+\)[\s\S]*gl\.uniform3f\(l\['uPalette'\+i\],c\[0\],c\[1\],c\[2\]\)/);
   assert.doesNotMatch(renderer, /\bstrobe\b|flash\s*\(|blink\s*\(/i);
+});
+
+
+test('compiled C++ cylinder geometry exercises real wrap, orientation and radial seam', (t) => {
+  const compiler = spawnSync('g++', ['--version'], { encoding: 'utf8' });
+  if (compiler.error?.code === 'ENOENT') {
+    t.skip('g++ not available for native geometry test');
+    return;
+  }
+  assert.equal(compiler.status, 0, compiler.stderr || compiler.error?.message);
+
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'lavalamp-native-geometry-'));
+  try {
+    // No Arduino/WLED runtime, device output, flash, or production source mutation:
+    // stub only the external WLED header dependencies; compile the real geometry header.
+    fs.writeFileSync(path.join(temp, 'wled.h'), [
+      '#pragma once',
+      '#include <cstdint>',
+      '#include <cstdlib>',
+      'static inline uint8_t ease8InOutApprox(uint8_t value) { return value; }',
+      '',
+    ].join('\n'));
+    fs.writeFileSync(path.join(temp, 'FX.h'), '#pragma once\n');
+    const harness = String.raw`
+#include "overlays/wled/usermods/cylinder_lava/cylinder_geometry.h"
+#include <cassert>
+#include <cstdint>
+
+int main() {
+  using namespace CylinderLamp;
+  const Surface surface{16, 9, 144};
+  assert(indexOf(15, 8, surface) == 143);
+  assert(wrapX(-1, surface.width) == 15);
+  assert(wrapX(16, surface.width) == 0);
+  assert(wrapX(33, surface.width) == 1);
+  assert(clampY(-2, surface.height) == 0);
+  assert(clampY(99, surface.height) == 8);
+  assert(angle8(0, 16) == 0);
+  assert(angle8(8, 16) == 128);
+  assert(heightFromBottom8(0, 9) == 255);
+  assert(heightFromBottom8(4, 9) == 128);
+  assert(heightFromBottom8(8, 9) == 0);
+
+  uint8_t pixels[144]{};
+  for (unsigned i = 0; i < 144; ++i) pixels[i] = uint8_t(i & 255);
+  assert(sampleWrapped(pixels, -1, 1, surface) == pixels[indexOf(15, 1, surface)]);
+  assert(sampleWrapped(pixels, 16, 1, surface) == pixels[indexOf(0, 1, surface)]);
+  assert(sampleWrapped(pixels, 17, -5, surface) == pixels[indexOf(1, 0, surface)]);
+  assert(sampleWrapped(pixels, -2, 99, surface) == pixels[indexOf(14, 8, surface)]);
+
+  const auto centerX = xToQ8(0);
+  const auto centerY = yToQ8(4);
+  assert(shortestXDeltaQ8(xToQ8(15), centerX, surface) == -256);
+  assert(shortestXDeltaQ8(xToQ8(1), centerX, surface) == 256);
+  const auto left = radialFalloffQ8(15, 4, surface, centerX, centerY, 512, 128);
+  const auto right = radialFalloffQ8(1, 4, surface, centerX, centerY, 512, 128);
+  const auto far = radialFalloffQ8(8, 4, surface, centerX, centerY, 512, 128);
+  assert(left == right);
+  assert(left > far);
+  return 0;
+}
+`;
+    const source = path.join(temp, 'geometry_test.cpp');
+    const executable = path.join(temp, 'geometry_test');
+    fs.writeFileSync(source, harness);
+    const build = spawnSync('g++', [
+      '-std=c++17', '-O0', '-Wall', '-Wextra',
+      '-I', temp, '-I', root, source, '-o', executable,
+    ], { encoding: 'utf8', timeout: 20000 });
+    assert.equal(build.status, 0, build.stderr || build.error?.message);
+    const run = spawnSync(executable, [], { encoding: 'utf8', timeout: 10000 });
+    assert.equal(run.status, 0, run.stderr || run.error?.message);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
 });
