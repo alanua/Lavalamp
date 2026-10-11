@@ -180,6 +180,32 @@ static void configureSurface(Surface& surface) {
   SEGMENT.colors[2] = 0xFF8A08;
 }
 
+static void configureScene(Surface& surface,
+                           uint8_t width,
+                           uint8_t height,
+                           uint8_t speed,
+                           uint8_t intensity,
+                           uint8_t heat,
+                           uint8_t viscosity,
+                           uint8_t softness,
+                           uint32_t color0,
+                           uint32_t color1,
+                           uint32_t color2) {
+  surface.width = width;
+  surface.height = height;
+  surface.count = uint16_t(surface.width) * surface.height;
+  SEGMENT.width = surface.width;
+  SEGMENT.height = surface.height;
+  SEGMENT.speed = speed;
+  SEGMENT.intensity = intensity;
+  SEGMENT.custom1 = heat;
+  SEGMENT.custom2 = viscosity;
+  SEGMENT.custom3 = softness;
+  SEGMENT.colors[0] = color0;
+  SEGMENT.colors[1] = color1;
+  SEGMENT.colors[2] = color2;
+}
+
 static uint64_t renderSequence(RenderState& state, const Surface& surface, uint8_t frames, std::vector<uint32_t>* frameDeltas) {
   std::vector<CRGB> previous;
   uint64_t combined = 0;
@@ -283,6 +309,111 @@ int main() {
             << " adjacent_mean=" << adjacentMean
             << " checksum=" << checksumA
             << "\n";
+
+  struct Config {
+    const char* name;
+    uint8_t width;
+    uint8_t height;
+    uint8_t speed;
+    uint8_t intensity;
+    uint8_t heat;
+    uint8_t viscosity;
+    uint8_t softness;
+    uint32_t color0;
+    uint32_t color1;
+    uint32_t color2;
+  };
+
+  const Config configs[] = {
+    {"default_16x12", 16, 12, 92, 140, 118, 164, 112, 0x030001, 0xE04800, 0xFF8A08},
+    {"compact_10x9_soft", 10, 9, 70, 96, 88, 210, 190, 0x030001, 0xD95700, 0xFFB018},
+    {"narrow_wrap_7x11", 7, 11, 118, 170, 142, 150, 124, 0x030001, 0xE04800, 0xFF8A08},
+    {"warm_user_palette", 15, 10, 145, 118, 174, 188, 84, 0x120201, 0xF06A08, 0xFFE040},
+  };
+
+  for (const Config& config : configs) {
+    configureScene(surface,
+                   config.width,
+                   config.height,
+                   config.speed,
+                   config.intensity,
+                   config.heat,
+                   config.viscosity,
+                   config.softness,
+                   config.color0,
+                   config.color1,
+                   config.color2);
+
+    if (CylinderLamp::heightFromBottom8(surface.height - 1, surface.height) != 0) {
+      return fail(std::string(config.name) + ": physical bottom row must map to zero height-from-bottom");
+    }
+    if (CylinderLamp::heightFromBottom8(0, surface.height) != 255) {
+      return fail(std::string(config.name) + ": top row must map to maximum height-from-bottom");
+    }
+    if (CylinderLamp::heightFromBottom8(surface.height - 2, surface.height) <=
+        CylinderLamp::heightFromBottom8(surface.height - 1, surface.height)) {
+      return fail(std::string(config.name) + ": height-from-bottom must increase above the physical bottom row");
+    }
+
+    RenderState firstConfigFrame;
+    CylinderLamp::clearFields(firstConfigFrame.field);
+    CylinderLamp::resetMotion(firstConfigFrame.motion);
+    SEGMENT.clearPixels();
+    CylinderLamp::renderLava(firstConfigFrame, surface, 33);
+
+    uint32_t configSeamTotal = 0;
+    uint32_t configAdjacentTotal = 0;
+    uint32_t configAdjacentCount = 0;
+    for (uint8_t y = 0; y < surface.height; y++) {
+      configSeamTotal += colorDelta(
+        SEGMENT.pixels[CylinderLamp::indexOf(0, y, surface)],
+        SEGMENT.pixels[CylinderLamp::indexOf(surface.width - 1, y, surface)]
+      );
+      for (uint8_t x = 0; x + 1 < surface.width; x++) {
+        configAdjacentTotal += colorDelta(
+          SEGMENT.pixels[CylinderLamp::indexOf(x, y, surface)],
+          SEGMENT.pixels[CylinderLamp::indexOf(x + 1, y, surface)]
+        );
+        configAdjacentCount++;
+      }
+    }
+
+    const uint32_t configSeamMean = configSeamTotal / surface.height;
+    const uint32_t configAdjacentMean = configAdjacentTotal / configAdjacentCount;
+    if (configSeamMean > configAdjacentMean * 2U + 8U) {
+      return fail(std::string(config.name) + ": cylinder seam is less continuous than ordinary horizontal neighbors");
+    }
+
+    RenderState configA;
+    CylinderLamp::clearFields(configA.field);
+    CylinderLamp::resetMotion(configA.motion);
+    std::vector<uint32_t> configDeltas;
+    const uint64_t configChecksumA = renderSequence(configA, surface, 9, &configDeltas);
+
+    RenderState configB;
+    CylinderLamp::clearFields(configB.field);
+    CylinderLamp::resetMotion(configB.motion);
+    const uint64_t configChecksumB = renderSequence(configB, surface, 9, nullptr);
+    if (configChecksumA != configChecksumB) {
+      return fail(std::string(config.name) + ": native lava sequence must be deterministic from the same state and controls");
+    }
+
+    bool configMoved = false;
+    for (const uint32_t packed : configDeltas) {
+      const uint32_t maxDelta = packed >> 16;
+      const uint32_t meanDelta = packed & 0xFFFFU;
+      if (meanDelta > 0) configMoved = true;
+      if (maxDelta > 70U || meanDelta > 36U) {
+        return fail(std::string(config.name) + ": native lava frame transition is too abrupt for the gentle scene contract"
+          + " max_delta=" + std::to_string(maxDelta)
+          + " mean_delta=" + std::to_string(meanDelta));
+      }
+    }
+    if (!configMoved) {
+      return fail(std::string(config.name) + ": native lava frames should transition, not freeze");
+    }
+  }
+
   return 0;
 }
 `;
