@@ -146,6 +146,40 @@ static uint32_t rowEnergy(uint8_t y, const Surface& surface) {
   return total;
 }
 
+struct SeamStats {
+  uint32_t seamMean = 0;
+  uint32_t adjacentMean = 0;
+  uint32_t seamMax = 0;
+};
+
+static SeamStats measureSeam(const Surface& surface) {
+  SeamStats stats;
+  uint32_t seamTotal = 0;
+  uint32_t adjacentTotal = 0;
+  uint32_t adjacentCount = 0;
+
+  for (uint8_t y = 0; y < surface.height; y++) {
+    const uint32_t seamDelta = colorDelta(
+      SEGMENT.pixels[CylinderLamp::indexOf(0, y, surface)],
+      SEGMENT.pixels[CylinderLamp::indexOf(surface.width - 1, y, surface)]
+    );
+    seamTotal += seamDelta;
+    stats.seamMax = std::max(stats.seamMax, seamDelta);
+
+    for (uint8_t x = 0; x + 1 < surface.width; x++) {
+      adjacentTotal += colorDelta(
+        SEGMENT.pixels[CylinderLamp::indexOf(x, y, surface)],
+        SEGMENT.pixels[CylinderLamp::indexOf(x + 1, y, surface)]
+      );
+      adjacentCount++;
+    }
+  }
+
+  stats.seamMean = seamTotal / surface.height;
+  stats.adjacentMean = adjacentTotal / adjacentCount;
+  return stats;
+}
+
 static uint64_t checksum(const Surface& surface) {
   uint64_t hash = 1469598103934665603ULL;
   for (uint16_t i = 0; i < surface.count; i++) {
@@ -233,6 +267,83 @@ static uint64_t renderSequence(RenderState& state, const Surface& surface, uint8
   return combined;
 }
 
+struct SweepStep {
+  uint8_t speed;
+  uint8_t intensity;
+  uint8_t heat;
+  uint8_t viscosity;
+  uint8_t softness;
+  uint16_t dt;
+};
+
+struct SweepMetrics {
+  uint64_t checksum = 0;
+  uint32_t worstFrameMax = 0;
+  uint32_t worstFrameMean = 0;
+  uint32_t worstSeamMean = 0;
+  uint32_t worstSeamMax = 0;
+  uint32_t worstSeamRatioNumerator = 0;
+  uint32_t framesMoved = 0;
+};
+
+static SweepMetrics renderControlSweep(RenderState& state, Surface& surface) {
+  const SweepStep steps[] = {
+    {64, 92, 84, 220, 190, 17},
+    {78, 116, 100, 204, 174, 29},
+    {96, 140, 126, 182, 148, 41},
+    {116, 166, 150, 160, 122, 53},
+    {138, 184, 176, 142, 100, 67},
+    {154, 174, 188, 152, 92, 43},
+    {128, 150, 158, 178, 132, 31},
+    {104, 122, 118, 208, 168, 23},
+    {82, 104, 96, 232, 202, 37},
+    {112, 136, 136, 190, 154, 59},
+  };
+
+  configureScene(surface, 13, 12, steps[0].speed, steps[0].intensity, steps[0].heat,
+                 steps[0].viscosity, steps[0].softness, 0x050001, 0xD85000, 0xFFC018);
+
+  SweepMetrics metrics;
+  std::vector<CRGB> previous;
+
+  for (const SweepStep& step : steps) {
+    SEGMENT.speed = step.speed;
+    SEGMENT.intensity = step.intensity;
+    SEGMENT.custom1 = step.heat;
+    SEGMENT.custom2 = step.viscosity;
+    SEGMENT.custom3 = step.softness;
+
+    SEGMENT.clearPixels();
+    CylinderLamp::renderLava(state, surface, step.dt);
+
+    const SeamStats seam = measureSeam(surface);
+    metrics.worstSeamMean = std::max(metrics.worstSeamMean, seam.seamMean);
+    metrics.worstSeamMax = std::max(metrics.worstSeamMax, seam.seamMax);
+    const uint32_t ratioNumerator = seam.adjacentMean == 0 ? seam.seamMean : (seam.seamMean * 100U) / seam.adjacentMean;
+    metrics.worstSeamRatioNumerator = std::max(metrics.worstSeamRatioNumerator, ratioNumerator);
+
+    const std::vector<CRGB> current = snapshot(surface);
+    if (!previous.empty()) {
+      uint32_t maxDelta = 0;
+      uint32_t totalDelta = 0;
+      for (uint16_t i = 0; i < surface.count; i++) {
+        const uint32_t delta = colorDelta(previous[i], current[i]);
+        maxDelta = std::max(maxDelta, delta);
+        totalDelta += delta;
+      }
+      const uint32_t meanDelta = totalDelta / surface.count;
+      metrics.worstFrameMax = std::max(metrics.worstFrameMax, maxDelta);
+      metrics.worstFrameMean = std::max(metrics.worstFrameMean, meanDelta);
+      if (meanDelta > 0) metrics.framesMoved++;
+    }
+
+    metrics.checksum ^= checksum(surface) + 0x9e3779b97f4a7c15ULL + (metrics.checksum << 6) + (metrics.checksum >> 2);
+    previous = current;
+  }
+
+  return metrics;
+}
+
 int main() {
   Surface surface;
   configureSurface(surface);
@@ -254,24 +365,9 @@ int main() {
   SEGMENT.clearPixels();
   CylinderLamp::renderLava(first, surface, 33);
 
-  uint32_t seamTotal = 0;
-  uint32_t adjacentTotal = 0;
-  uint32_t adjacentCount = 0;
-  for (uint8_t y = 0; y < surface.height; y++) {
-    seamTotal += colorDelta(
-      SEGMENT.pixels[CylinderLamp::indexOf(0, y, surface)],
-      SEGMENT.pixels[CylinderLamp::indexOf(surface.width - 1, y, surface)]
-    );
-    for (uint8_t x = 0; x + 1 < surface.width; x++) {
-      adjacentTotal += colorDelta(
-        SEGMENT.pixels[CylinderLamp::indexOf(x, y, surface)],
-        SEGMENT.pixels[CylinderLamp::indexOf(x + 1, y, surface)]
-      );
-      adjacentCount++;
-    }
-  }
-  const uint32_t seamMean = seamTotal / surface.height;
-  const uint32_t adjacentMean = adjacentTotal / adjacentCount;
+  const SeamStats defaultSeam = measureSeam(surface);
+  const uint32_t seamMean = defaultSeam.seamMean;
+  const uint32_t adjacentMean = defaultSeam.adjacentMean;
   if (seamMean > adjacentMean * 2U + 8U) {
     return fail("cylinder seam is less continuous than ordinary horizontal neighbors");
   }
@@ -361,25 +457,9 @@ int main() {
     SEGMENT.clearPixels();
     CylinderLamp::renderLava(firstConfigFrame, surface, 33);
 
-    uint32_t configSeamTotal = 0;
-    uint32_t configAdjacentTotal = 0;
-    uint32_t configAdjacentCount = 0;
-    for (uint8_t y = 0; y < surface.height; y++) {
-      configSeamTotal += colorDelta(
-        SEGMENT.pixels[CylinderLamp::indexOf(0, y, surface)],
-        SEGMENT.pixels[CylinderLamp::indexOf(surface.width - 1, y, surface)]
-      );
-      for (uint8_t x = 0; x + 1 < surface.width; x++) {
-        configAdjacentTotal += colorDelta(
-          SEGMENT.pixels[CylinderLamp::indexOf(x, y, surface)],
-          SEGMENT.pixels[CylinderLamp::indexOf(x + 1, y, surface)]
-        );
-        configAdjacentCount++;
-      }
-    }
-
-    const uint32_t configSeamMean = configSeamTotal / surface.height;
-    const uint32_t configAdjacentMean = configAdjacentTotal / configAdjacentCount;
+    const SeamStats configSeam = measureSeam(surface);
+    const uint32_t configSeamMean = configSeam.seamMean;
+    const uint32_t configAdjacentMean = configSeam.adjacentMean;
     if (configSeamMean > configAdjacentMean * 2U + 8U) {
       return fail(std::string(config.name) + ": cylinder seam is less continuous than ordinary horizontal neighbors");
     }
@@ -413,6 +493,45 @@ int main() {
       return fail(std::string(config.name) + ": native lava frames should transition, not freeze");
     }
   }
+
+  RenderState sweepA;
+  CylinderLamp::clearFields(sweepA.field);
+  CylinderLamp::resetMotion(sweepA.motion);
+  const SweepMetrics sweepMetricsA = renderControlSweep(sweepA, surface);
+
+  RenderState sweepB;
+  CylinderLamp::clearFields(sweepB.field);
+  CylinderLamp::resetMotion(sweepB.motion);
+  const SweepMetrics sweepMetricsB = renderControlSweep(sweepB, surface);
+
+  if (sweepMetricsA.checksum != sweepMetricsB.checksum) {
+    return fail("synthetic control sweep must be deterministic from the same state and controls");
+  }
+  if (sweepMetricsA.framesMoved < 6U) {
+    return fail("synthetic control sweep should exercise multiple visible transitions"
+      + std::string(" frames_moved=") + std::to_string(sweepMetricsA.framesMoved)
+      + " frame_max_delta=" + std::to_string(sweepMetricsA.worstFrameMax)
+      + " frame_mean_delta=" + std::to_string(sweepMetricsA.worstFrameMean));
+  }
+  if (sweepMetricsA.worstSeamRatioNumerator > 220U || sweepMetricsA.worstSeamMean > 34U || sweepMetricsA.worstSeamMax > 90U) {
+    return fail("synthetic control sweep seam continuity exceeded bounded native measurements"
+      + std::string(" seam_ratio_percent=") + std::to_string(sweepMetricsA.worstSeamRatioNumerator)
+      + " seam_mean=" + std::to_string(sweepMetricsA.worstSeamMean)
+      + " seam_max=" + std::to_string(sweepMetricsA.worstSeamMax));
+  }
+  if (sweepMetricsA.worstFrameMax > 88U || sweepMetricsA.worstFrameMean > 22U) {
+    return fail("synthetic control sweep produced an abrupt frame spike"
+      + std::string(" frame_max_delta=") + std::to_string(sweepMetricsA.worstFrameMax)
+      + " frame_mean_delta=" + std::to_string(sweepMetricsA.worstFrameMean));
+  }
+
+  std::cout << "sweep_checksum=" << sweepMetricsA.checksum
+            << " sweep_worst_frame_max=" << sweepMetricsA.worstFrameMax
+            << " sweep_worst_frame_mean=" << sweepMetricsA.worstFrameMean
+            << " sweep_worst_seam_mean=" << sweepMetricsA.worstSeamMean
+            << " sweep_worst_seam_max=" << sweepMetricsA.worstSeamMax
+            << " sweep_worst_seam_ratio_percent=" << sweepMetricsA.worstSeamRatioNumerator
+            << "\n";
 
   return 0;
 }
