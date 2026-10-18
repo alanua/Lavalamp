@@ -21,6 +21,7 @@ test('same seed and timestamp produce deterministic scene metadata', () => {
     const a = deterministicSceneState(scene.id, 123456, 987654321);
     const b = deterministicSceneState(scene.id, 123456, 987654321);
     assert.deepEqual(a, b);
+    assert.deepEqual(makeSceneFrame(a), makeSceneFrame(b));
   }
 });
 
@@ -61,6 +62,33 @@ test('crossfade scene metadata remains valid and continuous', () => {
   assert.deepEqual(blendSceneStates(a, b, 1), b);
 });
 
+test('crossfade samples stay finite and bounded across the full blend', () => {
+  const timestamp = 246813579;
+  const a = deterministicSceneState('field_lines', 101, timestamp);
+  const b = deterministicSceneState('particle_veil', 101, timestamp);
+  let previous = blendSceneStates(a, b, 0);
+
+  for (let step = 0; step <= 20; step += 1) {
+    const state = blendSceneStates(a, b, step / 20);
+    assert.ok(validateSceneFrame(makeSceneFrame(state)), `blend step ${step} validates`);
+    for (const key of ['brightness', 'energy', 'tempo', 'phase', 'accent']) {
+      assert.ok(Number.isFinite(state[key]), `${key} is finite at step ${step}`);
+    }
+    for (const color of state.palette) {
+      for (const channel of color) assert.ok(Number.isFinite(channel) && channel >= 0 && channel <= 1);
+    }
+    assert.ok(Number.isFinite(state.direction.x) && Number.isFinite(state.direction.y));
+    if (step > 0) {
+      for (const key of ['brightness', 'energy', 'tempo', 'accent']) {
+        assert.ok(Math.abs(state[key] - previous[key]) < 0.08, `${key} stays continuous at step ${step}`);
+      }
+      assert.ok(Math.abs(state.direction.x - previous.direction.x) < 0.12);
+      assert.ok(Math.abs(state.direction.y - previous.direction.y) < 0.12);
+    }
+    previous = state;
+  }
+});
+
 test('prototype-like palette names fall back to the scene palette', () => {
   const baseline = deterministicSceneState('prism_bloom', 9, 123456);
   assert.deepEqual(deterministicSceneState('prism_bloom', 9, 123456, 'constructor').palette, baseline.palette);
@@ -69,9 +97,26 @@ test('prototype-like palette names fall back to the scene palette', () => {
 
 test('invalid scene bus values fail closed', () => {
   const frame = makeSceneFrame(deterministicSceneState(SCENES[0].id, 3, 1));
-  assert.equal(validateSceneFrame({ ...frame, brightness: 1.1 }), false);
-  assert.equal(validateSceneFrame({ ...frame, direction: { x: -2, y: 0 } }), false);
-  assert.equal(validateSceneFrame({ ...frame, palette: [[0, 0, 0]] }), false);
+  const invalidPackets = [
+    null,
+    { ...frame, schema_version: 'lavalamp.scene_frame.v2' },
+    { ...frame, source: 'remote' },
+    { ...frame, scene_id: '' },
+    { ...frame, timestamp_ms: -1 },
+    { ...frame, timestamp_ms: Number.POSITIVE_INFINITY },
+    { ...frame, seed: 0 },
+    { ...frame, seed: 3.5 },
+    { ...frame, brightness: 1.1 },
+    { ...frame, energy: Number.NaN },
+    { ...frame, phase: -0.01 },
+    { ...frame, direction: { x: -2, y: 0 } },
+    { ...frame, palette: [[0, 0, 0]] },
+    { ...frame, palette: [[0, 0, 0], [1, 1, Number.NaN]] },
+    { ...frame, palette: [[0, 0, 0], [1, 1]] },
+  ];
+  for (const packet of invalidPackets) {
+    assert.equal(validateSceneFrame(packet), false);
+  }
 });
 
 test('runtime source contains no remote URLs or network APIs', () => {
