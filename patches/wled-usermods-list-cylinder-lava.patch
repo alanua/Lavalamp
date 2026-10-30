@@ -1,24 +1,10 @@
-diff --git a/wled00/usermods_list.cpp b/wled00/usermods_list.cpp
-index dfa0f80..9e9d59b 100644
---- a/wled00/usermods_list.cpp
-+++ b/wled00/usermods_list.cpp
-@@ -242,6 +242,10 @@
- #include "../usermods/LD2410_v2/usermod_ld2410.h"
- #endif
- 
+--- a/wled00/usermod.cpp
++++ b/wled00/usermod.cpp
+@@ -1,4 +1,7 @@
+ #include "wled.h"
 +#ifdef USERMOD_CYLINDER_LAVA
 +#include "../usermods/cylinder_lava/usermod_cylinder_lava.h"
 +#endif
-+
- void registerUsermods()
- {
  /*
-@@ -471,4 +475,8 @@ void registerUsermods()
-   #ifdef USERMOD_POV_DISPLAY
-   UsermodManager::add(new PovDisplayUsermod());
-   #endif
-+
-+  #ifdef USERMOD_CYLINDER_LAVA
-+  UsermodManager::add(new CylinderLavaUsermod());
-+  #endif
- }
+  * This v1 usermod file allows you to add own functionality to WLED more easily
+  * See: https://github.com/wled-dev/WLED/wiki/Add-own-functionality

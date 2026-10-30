@@ -1,8 +1,10 @@
 # Lavalamp
 
-Cylinder lamp firmware work for a premium atmospheric lamp based on WLED.
+Lavalamp is the public firmware and visual-effects companion for a physical 16x16 cylindrical ESP32 lamp built on WLED.
 
-This repository does not replace WLED. It fetches official WLED `v0.15.3` and overlays a small WLED usermod that registers custom product effects for the cylinder lamp.
+The repository does not replace WLED. It pins official WLED `v16.0.1`, applies a small cylinder-specific overlay/usermod, and keeps source-side validation separate from live-device deployment. Skeleton/Home Edge may control and verify a physical lamp, but this repository itself contains the reusable public source and test surface.
+
+Repository maturity: active experimental hardware/firmware work. Public `main` must not be assumed identical to a deployed device image, and open draft firmware PRs are not part of `main` until merged. No open-source license has been selected for this repository yet.
 
 ## Current Scope
 
@@ -43,13 +45,13 @@ Files applied inside WLED:
 - `usermods/cylinder_lava/lava_scene.h`
 - `usermods/cylinder_lava/usermod_cylinder_lava.h`
 - `platformio_override.ini`
-- `wled00/usermods_list.cpp` registration hook only
+- `wled00/usermod.cpp` registration hook only
 
 WLED core systems for OTA, UI, network, and presets are not rewritten, but a minimal integration patch is applied to WLED's usermod registration list.
 
 ## Versioning / Integration Risk
 
-This integration is pinned to WLED `v0.15.3`. The patch targets the `wled00/usermods_list.cpp` layout in that release, so updating WLED may require refreshing the patch before building.
+This integration is pinned to WLED `v16.0.1`, exact commit `29b389df1c1aaec6ff53aea742d17063b985906c`. Preparation rejects a different checkout before copying overlays. The patch targets the `wled00/usermod.cpp` layout in that release, so updating WLED may require refreshing the patch before building.
 
 ## Render Model
 
@@ -124,3 +126,21 @@ The custom effect assumes the WLED logical matrix is correct, then treats the lo
 - Judge Lava/Flame softness and brightness through the diffuser.
 
 Optional: temporarily build with `-D CYLINDER_DEBUG_PATTERN` to show center stripes and seam markers.
+
+## Phase 1 native 2D classification
+
+The production manifest in `native_2d_cylinder_adapter.h` classifies all 53
+registrations in the pinned upstream `FX.cpp` 2D block: 10
+`RADIAL_BOTTOM_POLAR` and 43 `FLAT_WRAP`. Coverage includes conditional legacy
+entries (`WLED_PS_DONT_REPLACE_2D_FX`) and ParticleSystem2D entries
+(`WLED_DISABLE_PARTICLESYSTEM2D`), regardless of build configuration.
+
+Run `node --test tests/wled_version_pin.test.mjs tests/native_2d_cylinder_adapter.test.mjs`
+for source validation. The test embeds the verbatim pinned registration block and
+ID definitions, with source blob IDs and snapshot checksums for offline repeatability.
+An upstream upgrade must update the source pin and inventory together; any added,
+removed, duplicate, or unclassified registration fails coverage.
+
+This phase covers only the upstream pin and classification. Retained runtime
+adapter and CY renderer work is deferred, and its host runtime test is explicitly
+skipped in this focused suite. Firmware builds and device operations are separate.

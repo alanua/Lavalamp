@@ -1,7 +1,11 @@
 #pragma once
 
+#ifdef CY_PREVIEW_HOST
+#include "cy_effects_preview_stub.h"
+#else
 #include "wled.h"
 #include "FX.h"
+#endif
 
 namespace CylinderLamp {
 
