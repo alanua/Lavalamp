@@ -5,7 +5,24 @@
 
 namespace CylinderLamp {
 
+struct TidalBloomState {
+  uint32_t rng = 0;
+  uint32_t nextTargetMs = 0;
+  float thetaOffset = 0.0f;
+  float thetaTarget = 0.0f;
+  float heightOffset = 0.0f;
+  float heightTarget = 0.0f;
+  float scaleX = 1.0f;
+  float scaleXTarget = 1.0f;
+  float scaleY = 1.0f;
+  float scaleYTarget = 1.0f;
+  float phaseOffset = 0.0f;
+  float phaseTarget = 0.0f;
+  uint8_t initialized = 0;
+};
+
 struct RenderState {
+  TidalBloomState tidalBloom;
   uint16_t width = 0;
   uint16_t height = 0;
   uint32_t lastMs = 0;
@@ -16,23 +33,23 @@ struct RenderState {
 };
 
 enum SceneId : uint8_t {
-  SCENE_ID_TIDAL_BLOOM = 1,
-  SCENE_ID_FLAME = 2,
-  SCENE_ID_LAVA_FLOW = 3,
-  SCENE_ID_OCEAN_DRIFT = 4,
-  SCENE_ID_AURORA = 5,
-  SCENE_ID_NEBULA = 6,
-  SCENE_ID_ENERGY_PULSE = 7,
-  SCENE_ID_BUBBLES = 8,
-  SCENE_ID_PARTICLE_STORM = 9,
-  SCENE_ID_RAINBOW_SPIRAL = 10,
-  SCENE_ID_MATRIX_RAIN = 11,
-  SCENE_ID_ELECTRIC_STORM = 12,
-  SCENE_ID_HEARTBEAT = 13,
-  SCENE_ID_DREAMSCAPE = 14,
-  SCENE_ID_ANEMONE = 15,
-  SCENE_ID_RIPPLE_RINGS = 16,
-  SCENE_ID_COMET_TRAILS = 17
+  SCENE_ID_ANEMONE = 1,
+  SCENE_ID_TIDAL_BLOOM = 2,
+  SCENE_ID_LAVA = 3,
+  SCENE_ID_FLAME = 4,
+  SCENE_ID_PLASMA_CORE = 5,
+  SCENE_ID_DEEP_NOISE = 6,
+  SCENE_ID_AURORA_TUBE = 7,
+  SCENE_ID_INNER_SWIRL = 8,
+  SCENE_ID_BUBBLES_VOLUME = 9,
+  SCENE_ID_RING_RIPPLES = 10,
+  SCENE_ID_RING_RIPPLES_RAINBOW = 11,
+  SCENE_ID_BOTTOM_RAYS = 12,
+  SCENE_ID_RISING_BANDS = 13,
+  SCENE_ID_HELICAL_PLASMA = 14,
+  SCENE_ID_NOISE_WAVES_TUBE = 15,
+  SCENE_ID_CELL_MEMBRANE_FLOW = 16,
+  SCENE_ID_CROSS_BANDS_TUBE = 17
 };
 
 struct SceneControls {
@@ -110,6 +127,7 @@ static inline void selectScene(RenderState& state, uint8_t sceneId) {
   if (state.sceneId == sceneId) return;
   clearFields(state.field);
   resetMotion(state.motion);
+  state.tidalBloom = TidalBloomState();
   state.lastMs = strip.now;
   state.sceneId = sceneId;
 }

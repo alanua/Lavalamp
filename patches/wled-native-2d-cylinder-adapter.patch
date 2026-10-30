@@ -1,0 +1,113 @@
+--- a/wled00/FX.h
++++ b/wled00/FX.h
+@@ -103,6 +103,9 @@
+ #define MIN_SHOW_DELAY   (_frametime < 16 ? 8 : 15)
+ 
+ #define NUM_COLORS       3 /* number of colors per segment */
++#ifdef USERMOD_CYLINDER_LAVA
++#include "../usermods/cylinder_lava/native_2d_cylinder_adapter.h"
++#endif
+ #define SEGMENT          (*strip._currentSegment)
+ #define SEGENV           (*strip._currentSegment)
+ #define SEGCOLOR(x)      Segment::getCurrentColor(x)
+--- a/wled00/FX_fcn.cpp
++++ b/wled00/FX_fcn.cpp
+@@ -656,6 +656,9 @@
+ 
+ // 2D matrix
+ unsigned Segment::virtualWidth() const {
++#ifdef USERMOD_CYLINDER_LAVA
++  if (CylinderNative::active(mode, width(), height())) return 16;
++#endif
+   unsigned groupLen = groupLength();
+   unsigned vWidth = ((transpose ? height() : width()) + groupLen - 1) / groupLen;
+   if (mirror) vWidth = (vWidth + 1) /2;  // divide by 2 if mirror, leave at least a single LED
+@@ -663,6 +666,9 @@
+ }
+ 
+ unsigned Segment::virtualHeight() const {
++#ifdef USERMOD_CYLINDER_LAVA
++  if (CylinderNative::active(mode, width(), height())) return 16;
++#endif
+   unsigned groupLen = groupLength();
+   unsigned vHeight = ((transpose ? width() : height()) + groupLen - 1) / groupLen;
+   if (mirror_y) vHeight = (vHeight + 1) /2;  // divide by 2 if mirror, leave at least a single LED
+@@ -1574,12 +1580,22 @@
+       if (pushOffsetX != 0) x = (x + pushOffsetX) % nCols;
+       if (pushOffsetY != 0) y = (y + pushOffsetY) % nRows;
+       uint32_t c_a = BLACK;
+-      if (x < vCols && y < vRows) c_a = seg->getPixelColorRaw(x + y*vCols); // will get clipped pixel from old segment or unclipped pixel from new segment
++      if (x < vCols && y < vRows) {
++#ifdef USERMOD_CYLINDER_LAVA
++        c_a = CylinderNative::output(seg->getPixels(), seg->mode, vCols, vRows, x, y);
++#else
++        c_a = seg->getPixelColorRaw(x + y*vCols);
++#endif
++      } // will get clipped pixel from old segment or unclipped pixel from new segment
+       if (segO && blendingStyle == TRANSITION_FADE
+         && (topSegment.mode != segO->mode || (segO->name != topSegment.name && segO->name && topSegment.name && strncmp(segO->name, topSegment.name, WLED_MAX_SEGNAME_LEN) != 0))
+         && x < oCols && y < oRows) {
+         // we need to blend old segment using fade as pixels are not clipped
+-        c_a = color_blend16(c_a, segO->getPixelColorRaw(x + y*oCols), progInv);
++        #ifdef USERMOD_CYLINDER_LAVA
++        c_a = color_blend16(c_a, CylinderNative::output(segO->getPixels(), segO->mode, oCols, oRows, x, y), progInv);
++#else
++        c_a = color_blend16(c_a, segO->getPixelColorRaw(x + y*oCols), progInv);
++#endif
+       } else if (blendingStyle != TRANSITION_FADE) {
+         // if we have global brightness change (not On/Off change) we will ignore transition style and just fade brightness (see led.cpp)
+         // workaround for On/Off transition
+--- a/wled00/FX_2Dfcn.cpp
++++ b/wled00/FX_2Dfcn.cpp
+@@ -188,6 +188,9 @@
+ void IRAM_ATTR_YN Segment::setPixelColorXY(int x, int y, uint32_t col) const
+ {
+   if (!isActive()) return; // not active
++#ifdef USERMOD_CYLINDER_LAVA
++  if (CylinderNative::active(mode, width(), height())) x = CylinderNative::wrap(x);
++#endif
+   if ((unsigned)x >= vWidth() || (unsigned)y >= vHeight()) return;  // if pixel would fall out of virtual segment just exit
+   setPixelColorXYRaw(x, y, col);
+ }
+@@ -237,6 +240,9 @@
+ 
+ // returns RGBW values of pixel
+ uint32_t IRAM_ATTR_YN Segment::getPixelColorXY(int x, int y) const {
++#ifdef USERMOD_CYLINDER_LAVA
++  if (CylinderNative::active(mode, width(), height())) x = CylinderNative::wrap(x);
++#endif
+   if (!isActive()) return 0; // not active
+   if ((unsigned)x >= vWidth() || (unsigned)y >= vHeight()) return 0;  // if pixel would fall out of virtual segment just exit
+   return getPixelColorXYRaw(x,y);
+@@ -248,6 +254,21 @@
+   const unsigned cols = vWidth();
+   const unsigned rows = vHeight();
+   const auto XY = [&](unsigned x, unsigned y){ return x + y*cols; };
++#ifdef USERMOD_CYLINDER_LAVA
++  const bool cylinder = CylinderNative::active(mode, width(), height());
++  if (blur_x && cylinder) {
++    for (unsigned row = 0; row < rows; ++row) {
++      uint32_t original[16];
++      for (unsigned x = 0; x < 16; ++x) original[x] = getPixelColorRaw(XY(x,row));
++      for (unsigned x = 0; x < 16; ++x) {
++        const uint32_t center = fast_color_scale(original[x], smear ? 255 : 255-blur_x);
++        const uint32_t left = fast_color_scale(original[(x+15)%16], blur_x>>1);
++        const uint32_t right = fast_color_scale(original[(x+1)%16], blur_x>>1);
++        setPixelColorRaw(XY(x,row), color_add(center, color_add(left,right)));
++      }
++    }
++  } else
++#endif
+   if (blur_x) {
+     const uint8_t keepx = smear ? 255 : 255 - blur_x;
+     const uint8_t seepx = blur_x >> 1;
+@@ -363,6 +384,9 @@
+ }
+ */
+ void Segment::moveX(int delta, bool wrap) const {
++#ifdef USERMOD_CYLINDER_LAVA
++  if (CylinderNative::active(mode, width(), height())) wrap = true;
++#endif
+   if (!isActive() || !delta) return; // not active
+   const int vW = vWidth();   // segment width in logical pixels (can be 0 if segment is inactive)
+   const int vH = vHeight();  // segment height in logical pixels (is always >= 1)
