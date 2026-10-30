@@ -1,17 +1,24 @@
 param(
-  [string]$WledVersion = "v0.15.3",
+  [string]$WledVersion = "v16.0.1",
   [string]$WledPath = "firmware/WLED"
 )
 
 $ErrorActionPreference = "Stop"
+$WledCommit = "29b389df1c1aaec6ff53aea742d17063b985906c"
+if ($WledVersion -ne "v16.0.1") { throw "Only stable WLED v16.0.1 is supported" }
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $target = Join-Path $repoRoot $WledPath
 $overlay = Join-Path $repoRoot "overlays/wled"
-$patch = Join-Path $repoRoot "patches/wled-usermods-list-cylinder-lava.patch"
 
 if (-not (Test-Path $target)) {
   git clone --branch $WledVersion --depth 1 https://github.com/wled/WLED.git $target
+  if ($LASTEXITCODE -ne 0) { throw "WLED clone failed" }
+}
+
+$actualCommit = git -C $target rev-parse HEAD
+if ($LASTEXITCODE -ne 0 -or $actualCommit -ne $WledCommit) {
+  throw "WLED source must be exactly $WledCommit; existing workspace was not changed"
 }
 
 Copy-Item -Path (Join-Path $overlay "platformio_override.ini") -Destination (Join-Path $target "platformio_override.ini") -Force
@@ -20,8 +27,14 @@ Copy-Item -Path (Join-Path $overlay "usermods/cylinder_lava/*") -Destination (Jo
 
 Push-Location $target
 try {
-  if (-not (Select-String -Path "wled00/usermods_list.cpp" -Pattern "USERMOD_CYLINDER_LAVA" -Quiet)) {
-    git apply --ignore-whitespace $patch
+  foreach ($patchName in @("wled-usermods-list-cylinder-lava.patch", "wled-native-2d-cylinder-adapter.patch")) {
+    $patchFile = Join-Path $repoRoot "patches/$patchName"
+    git apply --reverse --check $patchFile 2>$null
+    if ($LASTEXITCODE -eq 0) { continue } # already applied, exact patch
+    git apply --check $patchFile
+    if ($LASTEXITCODE -ne 0) { throw "Incompatible WLED integration patch: $patchName" }
+    git apply $patchFile
+    if ($LASTEXITCODE -ne 0) { throw "Failed WLED integration patch: $patchName" }
   }
   git status --short
 }
