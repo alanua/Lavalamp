@@ -286,6 +286,69 @@ struct SweepMetrics {
   uint32_t framesMoved = 0;
 };
 
+struct Cylinder16Metrics {
+  uint64_t checksum = 0;
+  uint32_t worstFrameMax = 0;
+  uint32_t worstFrameMean = 0;
+  uint32_t worstSeamMean = 0;
+  uint32_t worstSeamMax = 0;
+  uint32_t worstSeamRatioNumerator = 0;
+  uint32_t worstSeamAllowanceExcess = 0;
+  uint32_t framesMoved = 0;
+  uint32_t framesBottomBrighter = 0;
+};
+
+static Cylinder16Metrics renderCylinder16Sequence(RenderState& state, Surface& surface) {
+  configureScene(surface, 16, 16, 92, 140, 118, 164, 112,
+                 0x030001, 0xE04800, 0xFF8A08);
+
+  Cylinder16Metrics metrics;
+  std::vector<CRGB> previous;
+
+  for (uint8_t frame = 0; frame < 12; frame++) {
+    SEGMENT.clearPixels();
+    CylinderLamp::renderLava(state, surface, 33);
+
+    const SeamStats seam = measureSeam(surface);
+    metrics.worstSeamMean = std::max(metrics.worstSeamMean, seam.seamMean);
+    metrics.worstSeamMax = std::max(metrics.worstSeamMax, seam.seamMax);
+    const uint32_t seamRatio = seam.adjacentMean == 0
+      ? seam.seamMean
+      : (seam.seamMean * 100U) / seam.adjacentMean;
+    metrics.worstSeamRatioNumerator = std::max(metrics.worstSeamRatioNumerator, seamRatio);
+    const uint32_t seamAllowance = seam.adjacentMean * 2U + 8U;
+    if (seam.seamMean > seamAllowance) {
+      metrics.worstSeamAllowanceExcess = std::max(
+        metrics.worstSeamAllowanceExcess, seam.seamMean - seamAllowance);
+    }
+
+    if (rowEnergy(surface.height - 1, surface) > rowEnergy(0, surface)) {
+      metrics.framesBottomBrighter++;
+    }
+
+    const std::vector<CRGB> current = snapshot(surface);
+    if (!previous.empty()) {
+      uint32_t maxDelta = 0;
+      uint32_t totalDelta = 0;
+      for (uint16_t i = 0; i < surface.count; i++) {
+        const uint32_t delta = colorDelta(previous[i], current[i]);
+        maxDelta = std::max(maxDelta, delta);
+        totalDelta += delta;
+      }
+      const uint32_t meanDelta = totalDelta / surface.count;
+      metrics.worstFrameMax = std::max(metrics.worstFrameMax, maxDelta);
+      metrics.worstFrameMean = std::max(metrics.worstFrameMean, meanDelta);
+      if (meanDelta > 0) metrics.framesMoved++;
+    }
+
+    metrics.checksum ^= checksum(surface) + 0x9e3779b97f4a7c15ULL
+      + (metrics.checksum << 6) + (metrics.checksum >> 2);
+    previous = current;
+  }
+
+  return metrics;
+}
+
 static SweepMetrics renderControlSweep(RenderState& state, Surface& surface) {
   const SweepStep steps[] = {
     {64, 92, 84, 220, 190, 17},
@@ -493,6 +556,60 @@ int main() {
       return fail(std::string(config.name) + ": native lava frames should transition, not freeze");
     }
   }
+
+  RenderState cylinder16A;
+  CylinderLamp::clearFields(cylinder16A.field);
+  CylinderLamp::resetMotion(cylinder16A.motion);
+  const Cylinder16Metrics cylinder16MetricsA = renderCylinder16Sequence(cylinder16A, surface);
+
+  RenderState cylinder16B;
+  CylinderLamp::clearFields(cylinder16B.field);
+  CylinderLamp::resetMotion(cylinder16B.motion);
+  const Cylinder16Metrics cylinder16MetricsB = renderCylinder16Sequence(cylinder16B, surface);
+
+  if (surface.width != 16 || surface.height != 16 || surface.count != 256U) {
+    return fail("16x16 cylinder harness must exercise the complete 256-pixel surface");
+  }
+  if (CylinderLamp::heightFromBottom8(15, 16) != 0 ||
+      CylinderLamp::heightFromBottom8(0, 16) != 255 ||
+      CylinderLamp::heightFromBottom8(14, 16) <= CylinderLamp::heightFromBottom8(15, 16)) {
+    return fail("16x16 cylinder rows must retain physical top-to-bottom orientation");
+  }
+  if (cylinder16MetricsA.checksum != cylinder16MetricsB.checksum) {
+    return fail("16x16 temporal sequence must be deterministic from the same state and controls");
+  }
+  if (cylinder16MetricsA.framesMoved < 8U) {
+    return fail("16x16 temporal sequence should exercise multiple visible transitions"
+      + std::string(" frames_moved=") + std::to_string(cylinder16MetricsA.framesMoved));
+  }
+  if (cylinder16MetricsA.worstSeamAllowanceExcess > 0U ||
+      cylinder16MetricsA.worstSeamMean > 34U ||
+      cylinder16MetricsA.worstSeamMax > 90U) {
+    return fail("16x16 temporal wrap seam exceeded adjacent-neighbor continuity bounds"
+      + std::string(" seam_ratio_percent=") + std::to_string(cylinder16MetricsA.worstSeamRatioNumerator)
+      + " seam_allowance_excess=" + std::to_string(cylinder16MetricsA.worstSeamAllowanceExcess)
+      + " seam_mean=" + std::to_string(cylinder16MetricsA.worstSeamMean)
+      + " seam_max=" + std::to_string(cylinder16MetricsA.worstSeamMax));
+  }
+  if (cylinder16MetricsA.worstFrameMax > 88U || cylinder16MetricsA.worstFrameMean > 22U) {
+    return fail("16x16 temporal sequence produced an abrupt frame spike or flash"
+      + std::string(" frame_max_delta=") + std::to_string(cylinder16MetricsA.worstFrameMax)
+      + " frame_mean_delta=" + std::to_string(cylinder16MetricsA.worstFrameMean));
+  }
+  if (cylinder16MetricsA.framesBottomBrighter < 8U) {
+    return fail("16x16 rendered output must preserve the brighter physical-bottom orientation"
+      + std::string(" bottom_brighter_frames=") + std::to_string(cylinder16MetricsA.framesBottomBrighter));
+  }
+
+  std::cout << "cylinder_16x16_checksum=" << cylinder16MetricsA.checksum
+            << " cylinder_16x16_worst_frame_max=" << cylinder16MetricsA.worstFrameMax
+            << " cylinder_16x16_worst_frame_mean=" << cylinder16MetricsA.worstFrameMean
+            << " cylinder_16x16_worst_seam_mean=" << cylinder16MetricsA.worstSeamMean
+            << " cylinder_16x16_worst_seam_max=" << cylinder16MetricsA.worstSeamMax
+            << " cylinder_16x16_worst_seam_ratio_percent=" << cylinder16MetricsA.worstSeamRatioNumerator
+            << " cylinder_16x16_worst_seam_allowance_excess=" << cylinder16MetricsA.worstSeamAllowanceExcess
+            << " cylinder_16x16_bottom_brighter_frames=" << cylinder16MetricsA.framesBottomBrighter
+            << "\n";
 
   RenderState sweepA;
   CylinderLamp::clearFields(sweepA.field);
